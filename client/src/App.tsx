@@ -1,10 +1,10 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { api, type TransactionInput } from './api'
-import type { Budget, Dashboard, Goal, MonthlyTrend, Transaction } from './types'
+import type { Account, Budget, Dashboard, Goal, MonthlyTrend, Transaction } from './types'
 
 const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' })
 const categories = ['Income', 'Housing', 'Food & Dining', 'Utilities', 'Transport', 'Lifestyle', 'Health', 'Shopping', 'Subscriptions', 'Travel', 'Education', 'Other']
-const navItems = ['Overview', 'Transactions', 'Budgets', 'Goals'] as const
+const navItems = ['Overview', 'Transactions', 'Budgets', 'Goals', 'Settings'] as const
 const today = () => new Date().toISOString().slice(0, 10)
 
 type Notify = (message: string, tone?: 'success' | 'error') => void
@@ -34,7 +34,7 @@ function Empty({ title = 'Nothing here yet', body = 'Add your first item to get 
 
 function Toast({ message, tone }: { message: string; tone: 'success' | 'error' }) {
   if (!message) return null
-  return <div className={`toast ${tone}`}>{message}</div>
+  return <div className={`toast ${tone}`} role="status" aria-live="polite">{message}</div>
 }
 
 function App() {
@@ -51,18 +51,27 @@ function App() {
     window.setTimeout(() => setToast({ message: '', tone }), 3200)
   }
 
+  const signOut = (reason = '') => {
+    localStorage.removeItem('ledgerly_token')
+    setToken(null)
+    setData(null)
+    setActive('Overview')
+    setError(reason)
+  }
+
+  useEffect(() => {
+    const expired = () => signOut('Your session expired. Please sign in again.')
+    window.addEventListener('ledgerly:unauthorized', expired)
+    return () => window.removeEventListener('ledgerly:unauthorized', expired)
+  }, [])
+
   const refresh = async () => {
     try {
       setRefreshing(true)
       setError('')
       setData(await api.dashboard())
     } catch (e) {
-      const message = e instanceof Error ? e.message : 'Unable to load dashboard'
-      setError(message)
-      if (message.toLowerCase().includes('token') || message.toLowerCase().includes('authorization')) {
-        localStorage.removeItem('ledgerly_token')
-        setToken(null)
-      }
+      if (localStorage.getItem('ledgerly_token')) setError(e instanceof Error ? e.message : 'Unable to load dashboard')
     } finally {
       setRefreshing(false)
     }
@@ -85,13 +94,6 @@ function App() {
     }
   }
 
-  const signOut = () => {
-    localStorage.removeItem('ledgerly_token')
-    setToken(null)
-    setData(null)
-    setActive('Overview')
-  }
-
   if (!token) {
     return <main className="auth-shell">
       <section className="brand-panel">
@@ -110,9 +112,9 @@ function App() {
           <h2>{mode === 'login' ? 'Welcome back' : 'Create your account'}</h2>
           <p>Build a clearer picture of your money.</p>
           <form onSubmit={handleAuth}>
-            <label>Email<input name="email" type="email" autoComplete="email" required placeholder="you@example.com" /></label>
-            <label>Password<input name="password" type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} minLength={8} required placeholder="Minimum 8 characters" /></label>
-            {error && <div className="error">{error}</div>}
+            <label>Email<input name="email" type="email" autoComplete="email" required maxLength={180} placeholder="you@example.com" /></label>
+            <label>Password<input name="password" type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} minLength={8} maxLength={128} required placeholder="Minimum 8 characters" /></label>
+            {error && <div className="error" role="alert">{error}</div>}
             <button className="primary" type="submit">{mode === 'login' ? 'Sign in' : 'Create account'}</button>
           </form>
           <button className="text-button" onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setError('') }}>
@@ -127,30 +129,32 @@ function App() {
     <Toast {...toast} />
     <aside className="sidebar">
       <div className="brand"><div className="logo-mark small">L</div><div><strong>Ledgerly</strong><span>Money, clarified.</span></div></div>
-      <nav>{navItems.map(item => <button key={item} className={active === item ? 'active' : ''} onClick={() => setActive(item)}><span className="nav-dot" />{item}</button>)}</nav>
-      <div className="sidebar-foot"><span>Local portfolio build</span><button className="logout" onClick={signOut}>Sign out</button></div>
+      <nav aria-label="Primary navigation">{navItems.map(item => <button key={item} className={active === item ? 'active' : ''} aria-current={active === item ? 'page' : undefined} onClick={() => setActive(item)}><span className="nav-dot" />{item}</button>)}</nav>
+      <div className="sidebar-foot"><span>Ledgerly v1.0</span><button className="logout" onClick={() => signOut()}>Sign out</button></div>
     </aside>
 
     <main className="dashboard">
       <header>
         <div><span className="eyebrow">PERSONAL FINANCE</span><h1>{active}</h1><p>{pageDescription(active)}</p></div>
-        <button className="secondary" disabled={refreshing} onClick={refresh}>{refreshing ? 'Refreshing…' : 'Refresh data'}</button>
+        {active !== 'Settings' && <button className="secondary" disabled={refreshing} onClick={refresh}>{refreshing ? 'Refreshing…' : 'Refresh data'}</button>}
       </header>
-      {error && <div className="error">{error}</div>}
+      {error && <div className="error" role="alert">{error}</div>}
       {!data ? <div className="loading"><span className="spinner" />Loading Ledgerly…</div> : <>
         {active === 'Overview' && <Overview data={data} refresh={refresh} notify={notify} />}
         {active === 'Transactions' && <TransactionPage data={data} refresh={refresh} notify={notify} />}
         {active === 'Budgets' && <BudgetPage data={data} refresh={refresh} notify={notify} />}
         {active === 'Goals' && <GoalPage data={data} refresh={refresh} notify={notify} />}
+        {active === 'Settings' && <SettingsPage data={data} refresh={refresh} notify={notify} signOut={signOut} />}
       </>}
     </main>
   </div>
 }
 
 function pageDescription(active: string) {
-  if (active === 'Transactions') return 'Search, categorize, edit, and manage your cash flow.'
+  if (active === 'Transactions') return 'Search, filter, edit, import, and manage your cash flow.'
   if (active === 'Budgets') return 'Set monthly guardrails and see where your money is going.'
   if (active === 'Goals') return 'Build momentum toward the things that matter most.'
+  if (active === 'Settings') return 'Manage your account, security, and financial data.'
   return 'A clear snapshot of your financial month.'
 }
 
@@ -162,9 +166,9 @@ function Overview({ data, refresh, notify }: { data: Dashboard; refresh: () => P
 
   return <>
     <section className="metrics">
-      <Metric label="Net balance" value={money.format(data.totalBalance)} detail="Income minus tracked spending" />
-      <Metric label="Income" value={money.format(data.income)} detail={`${data.transactions.filter(t => t.amount > 0).length} income entries`} />
-      <Metric label="Expenses" value={money.format(data.expenses)} tone="red" detail={`${data.transactions.filter(t => t.amount < 0).length} expense entries`} />
+      <Metric label="Net balance" value={money.format(data.totalBalance)} detail="All tracked income minus spending" />
+      <Metric label="This month income" value={money.format(data.income)} detail={`${data.transactions.filter(t => t.amount > 0 && t.date.slice(0, 7) === today().slice(0, 7)).length} income entries`} />
+      <Metric label="This month expenses" value={money.format(data.expenses)} tone="red" detail={`${data.transactions.filter(t => t.amount < 0 && t.date.slice(0, 7) === today().slice(0, 7)).length} expense entries`} />
       <Metric label="Savings rate" value={`${data.savingsRate.toFixed(1)}%`} tone="amber" detail={data.savingsRate >= 20 ? 'Healthy monthly margin' : 'Room to improve'} />
     </section>
 
@@ -181,7 +185,7 @@ function Overview({ data, refresh, notify }: { data: Dashboard; refresh: () => P
     </section>
 
     <section className="grid two">
-      <article className="card"><div className="card-head"><h3>Spending breakdown</h3><span>All tracked expenses</span></div>
+      <article className="card"><div className="card-head"><h3>Spending breakdown</h3><span>Current month</span></div>
         {data.categories.length ? <div className="category-list">{data.categories.map(c => <div key={c.category}><span>{c.category}</span><strong>{money.format(c.amount)}</strong><Progress value={data.expenses ? (c.amount / data.expenses) * 100 : 0} /></div>)}</div> : <Empty />}
       </article>
       <article className="card"><div className="card-head"><h3>Budget progress</h3><span>Current month</span></div>
@@ -196,7 +200,7 @@ function Overview({ data, refresh, notify }: { data: Dashboard; refresh: () => P
       </article>
     </section>
 
-    {!data.transactions.length && <button className="primary demo" onClick={async () => { try { await api.seedDemo(); await refresh(); notify('Demo data loaded. Explore the dashboard!') } catch (e) { notify(e instanceof Error ? e.message : 'Unable to load demo data', 'error') } }}>Load realistic demo data</button>}
+    {!data.transactions.length && !data.budgets.length && !data.goals.length && <button className="primary demo" onClick={async () => { try { await api.seedDemo(); await refresh(); notify('Demo data loaded. Explore the dashboard!') } catch (e) { notify(e instanceof Error ? e.message : 'Unable to load demo data', 'error') } }}>Load realistic demo data</button>}
   </>
 }
 
@@ -223,25 +227,40 @@ function TransactionRow({ transaction, onEdit, onDelete }: { transaction: Transa
 
 function TransactionPage({ data, refresh, notify }: { data: Dashboard; refresh: () => Promise<void>; notify: Notify }) {
   const [draft, setDraft] = useState<TxDraft>(emptyTx())
+  const [transactionType, setTransactionType] = useState<'Expense' | 'Income'>('Expense')
   const [editing, setEditing] = useState<number | null>(null)
   const [search, setSearch] = useState('')
   const [category, setCategory] = useState('All')
   const [kind, setKind] = useState<'All' | 'Income' | 'Expense'>('All')
+  const [startDate, setStartDate] = useState('')
+  const [endDate, setEndDate] = useState('')
+  const [sort, setSort] = useState<'newest' | 'oldest' | 'high' | 'low'>('newest')
   const [busy, setBusy] = useState(false)
 
-  const filtered = useMemo(() => data.transactions.filter(t => {
-    const matchesSearch = `${t.description} ${t.category} ${t.notes || ''}`.toLowerCase().includes(search.toLowerCase())
-    const matchesCategory = category === 'All' || t.category === category
-    const matchesKind = kind === 'All' || (kind === 'Income' ? t.amount > 0 : t.amount < 0)
-    return matchesSearch && matchesCategory && matchesKind
-  }), [data.transactions, search, category, kind])
+  const filtered = useMemo(() => {
+    const items = data.transactions.filter(t => {
+      const matchesSearch = `${t.description} ${t.category} ${t.notes || ''}`.toLowerCase().includes(search.toLowerCase())
+      const matchesCategory = category === 'All' || t.category === category
+      const matchesKind = kind === 'All' || (kind === 'Income' ? t.amount > 0 : t.amount < 0)
+      const matchesStart = !startDate || t.date >= startDate
+      const matchesEnd = !endDate || t.date <= endDate
+      return matchesSearch && matchesCategory && matchesKind && matchesStart && matchesEnd
+    })
+    return [...items].sort((a, b) => {
+      if (sort === 'oldest') return a.date.localeCompare(b.date) || a.id - b.id
+      if (sort === 'high') return Math.abs(b.amount) - Math.abs(a.amount)
+      if (sort === 'low') return Math.abs(a.amount) - Math.abs(b.amount)
+      return b.date.localeCompare(a.date) || b.id - a.id
+    })
+  }, [data.transactions, search, category, kind, startDate, endDate, sort])
 
-  const reset = () => { setDraft(emptyTx()); setEditing(null) }
-  const edit = (t: Transaction) => { setEditing(t.id); setDraft({ description: t.description, amount: String(t.amount), category: t.category, date: t.date, notes: t.notes || '' }); window.scrollTo({ top: 0, behavior: 'smooth' }) }
+  const reset = () => { setDraft(emptyTx()); setEditing(null); setTransactionType('Expense') }
+  const edit = (t: Transaction) => { setEditing(t.id); setTransactionType(t.amount >= 0 ? 'Income' : 'Expense'); setDraft({ description: t.description, amount: String(Math.abs(t.amount)), category: t.category, date: t.date, notes: t.notes || '' }); window.scrollTo({ top: 0, behavior: 'smooth' }) }
 
   const submit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
-    const payload: TransactionInput = { ...draft, amount: Number(draft.amount) }
+    const rawAmount = Math.abs(Number(draft.amount))
+    const payload: TransactionInput = { ...draft, amount: transactionType === 'Expense' ? -rawAmount : rawAmount }
     try {
       setBusy(true)
       if (editing) await api.updateTransaction(editing, payload)
@@ -264,18 +283,19 @@ function TransactionPage({ data, refresh, notify }: { data: Dashboard; refresh: 
     <section className="grid form-grid">
       <article className="card form-card"><div className="card-head"><div><h3>{editing ? 'Edit transaction' : 'Add transaction'}</h3><p>{editing ? 'Update the selected entry.' : 'Record income or an expense.'}</p></div>{editing && <button className="text-button inline" onClick={reset}>Cancel edit</button>}</div>
         <form className="stack" onSubmit={submit}>
-          <div className="field-row"><label>Description<input value={draft.description} onChange={e => setDraft({ ...draft, description: e.target.value })} required placeholder="e.g. Grocery run" /></label><label>Amount<input value={draft.amount} onChange={e => setDraft({ ...draft, amount: e.target.value })} type="number" step="0.01" required placeholder="Negative = expense" /></label></div>
-          <div className="field-row"><label>Category<select value={draft.category} onChange={e => setDraft({ ...draft, category: e.target.value })}>{categories.map(item => <option key={item}>{item}</option>)}</select></label><label>Date<input value={draft.date} onChange={e => setDraft({ ...draft, date: e.target.value })} type="date" required /></label></div>
-          <label>Notes <span className="optional">optional</span><textarea value={draft.notes} onChange={e => setDraft({ ...draft, notes: e.target.value })} rows={2} placeholder="Add context for later" /></label>
+          <div className="type-toggle" role="group" aria-label="Transaction type"><button type="button" className={transactionType === 'Expense' ? 'active' : ''} onClick={() => { setTransactionType('Expense'); if (draft.category === 'Income') setDraft({ ...draft, category: 'Food & Dining' }) }}>Expense</button><button type="button" className={transactionType === 'Income' ? 'active income-type' : ''} onClick={() => { setTransactionType('Income'); setDraft({ ...draft, category: 'Income' }) }}>Income</button></div>
+          <div className="field-row"><label>Description<input value={draft.description} onChange={e => setDraft({ ...draft, description: e.target.value })} required maxLength={180} placeholder="e.g. Grocery run" /></label><label>Amount<input value={draft.amount} onChange={e => setDraft({ ...draft, amount: e.target.value })} type="number" min="0.01" step="0.01" required placeholder="0.00" /></label></div>
+          <div className="field-row"><label>Category<select value={draft.category} onChange={e => setDraft({ ...draft, category: e.target.value })}>{(transactionType === 'Income' ? ['Income'] : categories.filter(item => item !== 'Income')).map(item => <option key={item}>{item}</option>)}</select></label><label>Date<input value={draft.date} onChange={e => setDraft({ ...draft, date: e.target.value })} type="date" required /></label></div>
+          <label>Notes <span className="optional">optional</span><textarea value={draft.notes} onChange={e => setDraft({ ...draft, notes: e.target.value })} maxLength={2000} rows={2} placeholder="Add context for later" /></label>
           <button className="primary" disabled={busy}>{busy ? 'Saving…' : editing ? 'Update transaction' : 'Save transaction'}</button>
         </form>
       </article>
-      <article className="card mini-summary"><h3>This account</h3><div><span>Transactions</span><strong>{data.transactions.length}</strong></div><div><span>Total income</span><strong className="income">{money.format(data.income)}</strong></div><div><span>Total expenses</span><strong className="expense">{money.format(data.expenses)}</strong></div></article>
+      <article className="card mini-summary"><h3>This account</h3><div><span>Transactions</span><strong>{data.transactions.length}</strong></div><div><span>This month income</span><strong className="income">{money.format(data.income)}</strong></div><div><span>This month expenses</span><strong className="expense">{money.format(data.expenses)}</strong></div></article>
     </section>
 
     <section className="card transaction-manager">
       <div className="card-head"><div><h3>Transaction history</h3><p>{filtered.length} of {data.transactions.length} entries</p></div></div>
-      <div className="filters"><input aria-label="Search transactions" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search description, category, or notes…" /><select aria-label="Filter category" value={category} onChange={e => setCategory(e.target.value)}><option>All</option>{Array.from(new Set(data.transactions.map(t => t.category))).sort().map(item => <option key={item}>{item}</option>)}</select><select aria-label="Filter type" value={kind} onChange={e => setKind(e.target.value as typeof kind)}><option>All</option><option>Income</option><option>Expense</option></select></div>
+      <div className="filters"><input aria-label="Search transactions" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search description, category, or notes…" /><select aria-label="Filter category" value={category} onChange={e => setCategory(e.target.value)}><option>All</option>{Array.from(new Set(data.transactions.map(t => t.category))).sort().map(item => <option key={item}>{item}</option>)}</select><select aria-label="Filter type" value={kind} onChange={e => setKind(e.target.value as typeof kind)}><option>All</option><option>Income</option><option>Expense</option></select><input aria-label="Start date" type="date" value={startDate} onChange={e => setStartDate(e.target.value)} /><input aria-label="End date" type="date" value={endDate} onChange={e => setEndDate(e.target.value)} /><select aria-label="Sort transactions" value={sort} onChange={e => setSort(e.target.value as typeof sort)}><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="high">Largest amount</option><option value="low">Smallest amount</option></select></div>
       {filtered.length ? <div className="transactions">{filtered.map(t => <TransactionRow key={t.id} transaction={t} onEdit={edit} onDelete={remove} />)}</div> : <Empty title="No matching transactions" body="Try changing your search or filters." />}
     </section>
   </div>
@@ -341,9 +361,121 @@ function GoalPage({ data, refresh, notify }: { data: Dashboard; refresh: () => P
   const totalTarget = data.goals.reduce((sum, goal) => sum + goal.target, 0)
 
   return <div className="page-stack">
-    <section className="grid form-grid"><article className="card form-card"><div className="card-head"><div><h3>{editing ? 'Edit savings goal' : 'Create savings goal'}</h3><p>Give your savings a clear destination.</p></div>{editing && <button className="text-button inline" onClick={reset}>Cancel edit</button>}</div><form className="stack" onSubmit={submit}><label>Goal name<input value={name} onChange={e => setName(e.target.value)} required placeholder="Emergency fund" /></label><div className="field-row"><label>Target amount<input value={target} onChange={e => setTarget(e.target.value)} type="number" min="1" step="0.01" required placeholder="6000" /></label><label>Already saved<input value={saved} onChange={e => setSaved(e.target.value)} type="number" min="0" step="0.01" placeholder="0" /></label></div><button className="primary">{editing ? 'Update goal' : 'Save goal'}</button></form></article><article className="card mini-summary"><h3>Goal progress</h3><div><span>Total saved</span><strong className="income">{money.format(totalSaved)}</strong></div><div><span>Combined targets</span><strong>{money.format(totalTarget)}</strong></div><div><span>Overall funded</span><strong>{totalTarget ? `${Math.min((totalSaved / totalTarget) * 100, 100).toFixed(0)}%` : '0%'}</strong></div></article></section>
+    <section className="grid form-grid"><article className="card form-card"><div className="card-head"><div><h3>{editing ? 'Edit savings goal' : 'Create savings goal'}</h3><p>Give your savings a clear destination.</p></div>{editing && <button className="text-button inline" onClick={reset}>Cancel edit</button>}</div><form className="stack" onSubmit={submit}><label>Goal name<input value={name} onChange={e => setName(e.target.value)} required maxLength={120} placeholder="Emergency fund" /></label><div className="field-row"><label>Target amount<input value={target} onChange={e => setTarget(e.target.value)} type="number" min="1" step="0.01" required placeholder="6000" /></label><label>Already saved<input value={saved} onChange={e => setSaved(e.target.value)} type="number" min="0" step="0.01" placeholder="0" /></label></div><button className="primary">{editing ? 'Update goal' : 'Save goal'}</button></form></article><article className="card mini-summary"><h3>Goal progress</h3><div><span>Total saved</span><strong className="income">{money.format(totalSaved)}</strong></div><div><span>Combined targets</span><strong>{money.format(totalTarget)}</strong></div><div><span>Overall funded</span><strong>{totalTarget ? `${Math.min((totalSaved / totalTarget) * 100, 100).toFixed(0)}%` : '0%'}</strong></div></article></section>
     <section className="goal-grid">{data.goals.length ? data.goals.map(g => { const percent = (g.saved / g.target) * 100; const done = g.saved >= g.target; return <article className={`card goal-card ${done ? 'complete' : ''}`} key={g.id}><div className="card-head"><div><span className="goal-status">{done ? 'GOAL REACHED' : 'IN PROGRESS'}</span><h3>{g.name}</h3></div><div className="row-actions"><button onClick={() => edit(g)}>Edit</button><button className="danger-button" onClick={() => remove(g)}>Delete</button></div></div><div className="goal-amount"><strong>{money.format(g.saved)}</strong><span>of {money.format(g.target)}</span></div><Progress value={percent} /><div className="goal-meta"><span>{Math.min(percent, 100).toFixed(0)}% funded</span><span>{done ? 'Complete' : `${money.format(g.target - g.saved)} to go`}</span></div>{!done && <div className="contribution"><input aria-label={`Contribution to ${g.name}`} type="number" min="0.01" step="0.01" placeholder="Add contribution" value={contributions[g.id] || ''} onChange={e => setContributions({ ...contributions, [g.id]: e.target.value })} /><button className="secondary" onClick={() => contribute(g)}>Add funds</button></div>}</article> }) : <article className="card"><Empty title="No savings goals yet" body="Create a goal and start tracking your progress." /></article>}</section>
   </div>
+}
+
+function SettingsPage({ data, refresh, notify, signOut }: { data: Dashboard; refresh: () => Promise<void>; notify: Notify; signOut: (reason?: string) => void }) {
+  const [account, setAccount] = useState<Account | null>(null)
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [deletePassword, setDeletePassword] = useState('')
+  const [busy, setBusy] = useState('')
+
+  useEffect(() => { api.account().then(setAccount).catch(() => undefined) }, [data.transactions.length, data.budgets.length, data.goals.length])
+
+  const changePassword = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (newPassword !== confirmPassword) return notify('New passwords do not match.', 'error')
+    try { setBusy('password'); await api.changePassword(currentPassword, newPassword); setCurrentPassword(''); setNewPassword(''); setConfirmPassword(''); notify('Password updated successfully.') }
+    catch (error) { notify(error instanceof Error ? error.message : 'Unable to change password', 'error') }
+    finally { setBusy('') }
+  }
+
+  const exportCsv = () => {
+    const escape = (value: string | number) => `"${String(value).replaceAll('"', '""')}"`
+    const rows = [['description', 'amount', 'category', 'date', 'notes'], ...data.transactions.map(t => [t.description, t.amount, t.category, t.date, t.notes || ''])]
+    const csv = rows.map(row => row.map(escape).join(',')).join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = `ledgerly-transactions-${today()}.csv`
+    anchor.click()
+    URL.revokeObjectURL(url)
+    notify(`Exported ${data.transactions.length} transactions.`)
+  }
+
+  const importCsv = async (file: File) => {
+    try {
+      setBusy('import')
+      const text = await file.text()
+      const rows = parseCsv(text)
+      if (rows.length < 2) throw new Error('CSV is empty.')
+      const headers = rows[0].map(value => value.trim().toLowerCase())
+      const required = ['description', 'amount', 'category', 'date']
+      if (required.some(field => !headers.includes(field))) throw new Error('CSV must include description, amount, category, and date headers.')
+      const index = (field: string) => headers.indexOf(field)
+      const payload: TransactionInput[] = rows.slice(1).filter(row => row.some(value => value.trim())).map(row => ({
+        description: row[index('description')] || '',
+        amount: Number(row[index('amount')]),
+        category: row[index('category')] || '',
+        date: row[index('date')] || '',
+        notes: headers.includes('notes') ? row[index('notes')] || '' : '',
+      }))
+      const result = await api.importTransactions(payload)
+      await refresh()
+      notify(`Imported ${result.imported} transactions.`)
+    } catch (error) { notify(error instanceof Error ? error.message : 'Unable to import CSV', 'error') }
+    finally { setBusy('') }
+  }
+
+  const clearData = async () => {
+    if (!window.confirm('Delete ALL transactions, budgets, and goals? Your account will remain active.')) return
+    if (!window.confirm('This cannot be undone. Clear all financial data?')) return
+    try { setBusy('clear'); await api.clearData(); await refresh(); notify('Financial data cleared.') }
+    catch (error) { notify(error instanceof Error ? error.message : 'Unable to clear data', 'error') }
+    finally { setBusy('') }
+  }
+
+  const resetDemo = async () => {
+    if (!window.confirm('Replace all financial data with Ledgerly demo data?')) return
+    try { setBusy('demo'); await api.resetDemo(); await refresh(); notify('Fresh six-month demo data loaded.') }
+    catch (error) { notify(error instanceof Error ? error.message : 'Unable to reset demo data', 'error') }
+    finally { setBusy('') }
+  }
+
+  const deleteAccount = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!window.confirm('Permanently delete your Ledgerly account and all data?')) return
+    try { setBusy('delete'); await api.deleteAccount(deletePassword); signOut('Your account was deleted.') }
+    catch (error) { notify(error instanceof Error ? error.message : 'Unable to delete account', 'error') }
+    finally { setBusy('') }
+  }
+
+  return <div className="settings-grid">
+    <article className="card settings-card"><div className="card-head"><div><h3>Account</h3><p>Your Ledgerly profile and usage summary.</p></div></div>{account ? <div className="account-summary"><div><span>Email</span><strong>{account.email}</strong></div><div><span>Member since</span><strong>{account.createdAt ? new Date(account.createdAt).toLocaleDateString() : '—'}</strong></div><div><span>Transactions</span><strong>{account.transactionCount}</strong></div><div><span>Budgets / goals</span><strong>{account.budgetCount} / {account.goalCount}</strong></div></div> : <div className="loading compact"><span className="spinner" />Loading account…</div>}</article>
+
+    <article className="card settings-card"><div className="card-head"><div><h3>Change password</h3><p>Use a unique password of at least eight characters.</p></div></div><form className="stack" onSubmit={changePassword}><label>Current password<input type="password" autoComplete="current-password" required value={currentPassword} onChange={e => setCurrentPassword(e.target.value)} /></label><label>New password<input type="password" autoComplete="new-password" minLength={8} maxLength={128} required value={newPassword} onChange={e => setNewPassword(e.target.value)} /></label><label>Confirm new password<input type="password" autoComplete="new-password" minLength={8} maxLength={128} required value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} /></label><button className="primary" disabled={busy === 'password'}>{busy === 'password' ? 'Updating…' : 'Update password'}</button></form></article>
+
+    <article className="card settings-card data-tools"><div className="card-head"><div><h3>Data portability</h3><p>Your transaction history belongs to you.</p></div></div><div className="settings-actions"><button className="secondary" onClick={exportCsv} disabled={!data.transactions.length}>Export CSV</button><label className="file-button">{busy === 'import' ? 'Importing…' : 'Import CSV'}<input type="file" accept=".csv,text/csv" disabled={busy === 'import'} onChange={e => { const file = e.target.files?.[0]; if (file) void importCsv(file); e.currentTarget.value = '' }} /></label></div><small>CSV headers: description, amount, category, date, notes. Imports are validated before any rows are saved.</small></article>
+
+    <article className="card settings-card"><div className="card-head"><div><h3>Demo & reset tools</h3><p>Useful for evaluating Ledgerly without manual data entry.</p></div></div><div className="settings-actions vertical"><button className="secondary" disabled={!!busy} onClick={resetDemo}>{busy === 'demo' ? 'Loading demo…' : 'Replace with fresh demo data'}</button><button className="danger-outline" disabled={!!busy} onClick={clearData}>{busy === 'clear' ? 'Clearing…' : 'Clear all financial data'}</button></div></article>
+
+    <article className="card settings-card danger-zone"><div className="card-head"><div><h3>Danger zone</h3><p>Permanently remove your account and all associated data.</p></div></div><form className="stack" onSubmit={deleteAccount}><label>Confirm with your password<input type="password" autoComplete="current-password" required value={deletePassword} onChange={e => setDeletePassword(e.target.value)} /></label><button className="danger-primary" disabled={busy === 'delete'}>{busy === 'delete' ? 'Deleting…' : 'Delete account permanently'}</button></form></article>
+  </div>
+}
+
+function parseCsv(input: string): string[][] {
+  const rows: string[][] = []
+  let row: string[] = []
+  let cell = ''
+  let quoted = false
+  for (let i = 0; i < input.length; i += 1) {
+    const char = input[i]
+    const next = input[i + 1]
+    if (char === '"' && quoted && next === '"') { cell += '"'; i += 1 }
+    else if (char === '"') quoted = !quoted
+    else if (char === ',' && !quoted) { row.push(cell); cell = '' }
+    else if ((char === '\n' || char === '\r') && !quoted) {
+      if (char === '\r' && next === '\n') i += 1
+      row.push(cell); rows.push(row); row = []; cell = ''
+    } else cell += char
+  }
+  if (cell.length || row.length) { row.push(cell); rows.push(row) }
+  return rows
 }
 
 export default App
