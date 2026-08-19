@@ -1,27 +1,22 @@
 # Ledgerly
 
-Ledgerly is a full-stack personal-finance application for tracking cash flow, managing monthly budgets, and building savings goals through a polished responsive dashboard.
+Ledgerly is a production-minded full-stack personal-finance application for tracking cash flow, managing monthly budgets, and building savings goals through a polished responsive dashboard.
 
-## Why this project exists
+## Consumer-ready v1 feature set
 
-Ledgerly was built as a production-minded application rather than a single-screen CRUD demo. It demonstrates full-stack product design, authenticated API architecture, user-scoped relational data, analytics, account recovery, transactional email, destructive-action safety, data portability, test coverage, CI, and deployment configuration.
-
-## v1.0 feature set
-
-### Authentication and account management
-- User registration and login
-- Password hashing with Werkzeug
-- Email verification for new production accounts
-- Resend-verification flow with cooldowns
-- Forgot-password and one-time password-reset links
-- Signed, expiring email verification and reset tokens
-- Password policy requiring 10–128 characters with a letter and a number
+### Authentication and account lifecycle
+- User registration with verified-email activation
+- Resend verification flow with expiring, one-time verification links
+- Resend-verification action for accounts that have not activated yet
+- Non-enumerating forgot-password flow
+- Expiring, one-time password-reset links
+- Strong password policy and Werkzeug password hashing
 - Signed JWT access tokens with configurable expiry
-- Server-side session revocation after password changes or resets
-- Durable per-IP rate limits on public authentication endpoints
-- Account profile and email-verification status
-- Password-confirmed account deletion
-- Strict user ownership checks on every protected resource
+- Session revocation after password changes/resets through per-user auth versioning
+- Account profile summary and verification status
+- Password-confirmed permanent account deletion
+- Per-IP authentication rate limiting
+- Strict user ownership checks on every protected finance resource
 
 ### Financial overview
 - Lifetime net balance
@@ -56,6 +51,15 @@ Ledgerly was built as a production-minded application rather than a single-scree
 - Add contributions directly to active goals
 - Completion states and aggregate progress
 
+### Appearance and responsive UX
+- Desktop, tablet, and native-width mobile layouts
+- Mobile navigation that does not require pinch-zooming
+- Persistent theme preference stored locally in the browser
+- Midnight, Emerald, Violet, Amber, and Light themes
+- Semantic income/expense colors remain distinct from the chosen accent theme
+- Keyboard-visible focus states and semantic form labels
+- Loading, empty, error, success, over-budget, completed-goal, and expired-session states
+
 ### Data controls
 - Export transaction history to CSV
 - Import transaction history from CSV
@@ -63,25 +67,12 @@ Ledgerly was built as a production-minded application rather than a single-scree
 - Replace current data with a fresh demo dataset
 - Permanently delete the account and all associated data
 
-### Product quality
-- Native-width desktop, tablet, and mobile layouts without requiring browser zoom adjustments
-- Keyboard-visible focus states and semantic form labels
-- Loading, empty, error, success, over-budget, completed-goal, verification, recovery, and expired-session states
-- Confirmation flows for destructive operations
-- Server-side input validation and request-size limits
-- Authentication endpoint rate limiting
-- API security headers and no-store responses
-- PostgreSQL production configuration with SQLite local fallback
-- Render Blueprint for frontend, API, health checks, and PostgreSQL
-- Dependency update automation with Dependabot
-- Security documentation in [`SECURITY.md`](SECURITY.md)
-
 ## Tech stack
 
 **Frontend:** React 18, TypeScript, Vite, CSS  
 **Backend:** Python, Flask, Flask-SQLAlchemy, Flask-JWT-Extended  
 **Database:** PostgreSQL in production / SQLite locally  
-**Email:** Resend transactional email API  
+**Transactional email:** Resend  
 **Testing:** pytest  
 **DevOps:** GitHub Actions, Dependabot, Render
 
@@ -91,20 +82,22 @@ Ledgerly was built as a production-minded application rather than a single-scree
 Ledgerly/
 ├── client/
 │   └── src/
-│       ├── App.tsx          # Finance application and product workflows
-│       ├── AuthScreen.tsx   # Sign-in, registration, verification, recovery
-│       ├── api.ts           # Typed API client
-│       ├── styles.css       # Base responsive design system
-│       ├── consumer.css     # Consumer/mobile responsive hardening
-│       └── types.ts         # Shared frontend domain types
+│       ├── App.tsx
+│       ├── AuthScreen.tsx
+│       ├── ThemeSwitcher.tsx
+│       ├── api.ts
+│       ├── styles.css
+│       ├── consumer.css
+│       ├── themes.css
+│       └── types.ts
 ├── server/
 │   ├── app/
-│   │   ├── models.py        # Users, rate limits, transactions, budgets, goals
-│   │   ├── routes.py        # Auth and finance REST API
-│   │   ├── email_service.py # Transactional email delivery
-│   │   ├── rate_limit.py    # Durable auth abuse limits
-│   │   └── config.py        # Environment/database/security config
-│   └── tests/               # API, auth security, isolation, CRUD, import tests
+│   │   ├── models.py
+│   │   ├── routes.py
+│   │   ├── email_service.py
+│   │   ├── rate_limit.py
+│   │   └── config.py
+│   └── tests/
 ├── docs/
 │   ├── ARCHITECTURE.md
 │   └── CONSUMER_READINESS.md
@@ -115,7 +108,7 @@ Ledgerly/
 
 ## Local development
 
-### 1. Backend
+### Backend
 
 ```bash
 cd server
@@ -138,13 +131,9 @@ pip install -r requirements.txt
 python run.py
 ```
 
-The API runs at `http://localhost:5000`. The health endpoint is `http://localhost:5000/api/health`.
+The API runs at `http://localhost:5000`, with health at `http://localhost:5000/api/health`.
 
-For local development without an email provider, set `EMAIL_VERIFICATION_REQUIRED=false`. Production should keep verification enabled.
-
-### 2. Frontend
-
-In another terminal:
+### Frontend
 
 ```bash
 cd client
@@ -152,11 +141,9 @@ npm install
 npm run dev
 ```
 
-The frontend runs at `http://localhost:5173` and defaults to `http://localhost:5000/api` for local API requests.
+The frontend runs at `http://localhost:5173` and defaults to `http://localhost:5000/api` locally.
 
-## Environment variables
-
-Never commit production secrets.
+## Production environment
 
 Server:
 
@@ -164,11 +151,11 @@ Server:
 SECRET_KEY=<long random value>
 JWT_SECRET_KEY=<different long random value>
 JWT_ACCESS_TOKEN_HOURS=12
-DATABASE_URL=<PostgreSQL URL in production>
+DATABASE_URL=<PostgreSQL URL>
 CLIENT_ORIGIN=<frontend origin>
-PUBLIC_APP_URL=<frontend public URL>
+PUBLIC_APP_URL=<frontend origin>
 RESEND_API_KEY=<Resend API key>
-EMAIL_FROM=Ledgerly <hello@your-verified-domain.example>
+EMAIL_FROM=Ledgerly <no-reply@verified-sending-domain>
 EMAIL_VERIFICATION_REQUIRED=true
 ```
 
@@ -178,7 +165,9 @@ Client:
 VITE_API_URL=<API origin>/api
 ```
 
-## Test and release checks
+`RESEND_API_KEY` and all other production secrets belong only in the deployment environment. Sending verification/recovery mail to arbitrary public users requires a verified sending domain at the transactional-email provider.
+
+## Quality gates
 
 Backend:
 
@@ -197,11 +186,9 @@ npm run typecheck
 npm run build
 ```
 
-GitHub Actions performs the same quality gates on pull requests. Backend tests run against Python 3.12 and 3.14.
+GitHub Actions runs the same checks on pull requests. Backend tests cover both Python 3.12 and Python 3.14.
 
 ## CSV format
-
-Ledgerly exports and imports the same transaction schema:
 
 ```csv
 description,amount,category,date,notes
@@ -244,16 +231,14 @@ POST   /api/demo/reset
 GET    /api/health
 ```
 
-See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/CONSUMER_READINESS.md`](docs/CONSUMER_READINESS.md), and [`SECURITY.md`](SECURITY.md) for implementation and deployment requirements.
+See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/CONSUMER_READINESS.md`](docs/CONSUMER_READINESS.md), and [`SECURITY.md`](SECURITY.md) for implementation and deployment details.
 
 ## Deployment
 
-`render.yaml` defines the Render topology:
+`render.yaml` defines the Render deployment: PostgreSQL, the Flask/Gunicorn API, and the React static site. Configure the synced deployment variables above, then allow Render to rebuild from `main`.
 
-1. PostgreSQL database
-2. Flask/Gunicorn API service with `/api/health` health checks
-3. React static frontend
+## Status
 
-Production requires the frontend/API origins plus a verified transactional-email sender. Email verification should remain enabled for public use.
+Ledgerly's application code covers the intended consumer v1 scope: verified account lifecycle, password recovery, user-scoped finance CRUD, analytics, budgets, goals, data portability, destructive-data controls, responsive UI, persistent themes, automated security regression tests, CI, and deployment configuration.
 
-Large external integrations such as bank aggregation are intentionally outside the v1.0 scope because they require third-party financial credentials. Ledgerly's core finance workflows are fully usable without connecting a bank account.
+A public production instance must additionally provide a verified transactional-email sender domain so verification and password-recovery messages can be delivered to arbitrary users. This is deployment infrastructure rather than an application-code gap.
