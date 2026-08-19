@@ -1,22 +1,47 @@
 # Ledgerly
 
-A modern personal finance and budgeting platform built to make spending, budgets, goals, and cash flow easy to understand at a glance.
+A polished personal-finance dashboard for tracking cash flow, managing category budgets, and building savings goals.
 
 ## What it demonstrates
 
-Ledgerly is a portfolio-grade full-stack application built with a React + TypeScript frontend and a Flask API. It demonstrates authenticated API design, relational data modeling, responsive dashboard UI, CRUD workflows, analytics-style summaries, automated tests, and CI.
+Ledgerly is a portfolio-grade full-stack application built with a React + TypeScript frontend and a Flask API. It demonstrates authenticated API design, relational data modeling, responsive product UI, full CRUD workflows, financial analytics, automated tests, and CI.
 
 ## Features
 
+### Financial overview
+- Net balance, total income, total expenses, and savings-rate metrics
+- Six-month income vs. expense cash-flow visualization
+- Spending breakdown by category
+- Current-month budget health
+- Savings-goal progress and quick financial insights
+
+### Transactions
+- Create, edit, and delete transactions
+- Income and expense categorization
+- Optional notes
+- Search across description, category, and notes
+- Filter by category and transaction type
+- Responsive transaction history
+
+### Budgets
+- Create and update monthly category budgets
+- Live current-month spend calculation
+- Remaining/over-budget amounts
+- Visual over-limit states
+- Edit and delete controls
+
+### Savings goals
+- Create, edit, and delete goals
+- Track target and saved amounts
+- Add contributions directly to an existing goal
+- Completion states and aggregate goal progress
+
+### Platform
 - User registration and JWT authentication
-- Financial overview with balance, income, expenses, and savings rate
-- Transaction creation, filtering, categorization, and deletion
-- Monthly category budgets with live progress indicators
-- Savings goals with target/progress tracking
-- Recent-activity dashboard
-- Responsive dark fintech UI
+- Responsive dark fintech design
 - PostgreSQL-ready backend with SQLite fallback for local development
-- Pytest API tests and GitHub Actions CI
+- Pytest API coverage for authentication, transactions, budgets, goals, and demo seeding
+- GitHub Actions frontend build + backend test CI
 
 ## Stack
 
@@ -32,15 +57,17 @@ Ledgerly is a portfolio-grade full-stack application built with a React + TypeSc
 ```bash
 cd server
 python -m venv .venv
-# Windows: .venv\Scripts\activate
+# Windows PowerShell: .\.venv\Scripts\Activate.ps1
 # macOS/Linux: source .venv/bin/activate
 pip install -r requirements.txt
 python run.py
 ```
 
-The API runs at `http://localhost:5000`.
+The API runs at `http://localhost:5000`. Health check: `http://localhost:5000/api/health`.
 
 ### Frontend
+
+Open another terminal:
 
 ```bash
 cd client
@@ -50,11 +77,11 @@ npm run dev
 
 The app runs at `http://localhost:5173`.
 
-The default local API URL is `http://localhost:5000/api`. Copy `.env.example` to `.env` if you want to override environment values.
+The default local API URL is `http://localhost:5000/api`. Copy `.env.example` to `.env` if you need to override environment values.
 
 ## Demo flow
 
-Register an account, then use **Load demo data** from the dashboard to populate a realistic month of transactions, budgets, and savings goals.
+Register a fresh account and choose **Load realistic demo data** from the Overview page. Ledgerly seeds six months of sample cash flow plus current budgets and savings goals, making the analytics and management flows immediately testable.
 
 ## API overview
 
@@ -62,9 +89,12 @@ Register an account, then use **Load demo data** from the dashboard to populate 
 - `POST /api/auth/login`
 - `GET /api/dashboard`
 - `GET|POST /api/transactions`
-- `DELETE /api/transactions/:id`
+- `PATCH|DELETE /api/transactions/:id`
 - `GET|POST /api/budgets`
+- `PATCH|DELETE /api/budgets/:id`
 - `GET|POST /api/goals`
+- `PATCH|DELETE /api/goals/:id`
+- `POST /api/goals/:id/contribute`
 - `POST /api/demo/seed`
 - `GET /api/health`
 
@@ -72,4 +102,4 @@ See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for design details.
 
 ## Status
 
-Feature-complete MVP. The repository is intentionally structured so additional integrations such as bank aggregation, recurring transactions, CSV import/export, and richer reporting can be added without rewriting the core domain model.
+Ledgerly is a complete portfolio MVP. The core finance workflows are implemented end-to-end and the architecture leaves room for future integrations such as recurring transactions, CSV import/export, bank aggregation, and richer reporting without changing the core domain model.
