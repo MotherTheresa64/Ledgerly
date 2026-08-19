@@ -1,23 +1,13 @@
 import os
 
-import flask_jwt_extended
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from sqlalchemy import inspect, text
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from .config import Config
-from .extensions import db, jwt
-from .firebase_auth import authenticate_request, get_jwt_identity, jwt_required
-from .models import Budget, Goal, Transaction, User
-
-# Existing finance routes already use jwt_required/get_jwt_identity extensively. Swap those
-# symbols before importing the blueprint so every protected route now validates a Firebase
-# ID token while leaving the finance-domain code unchanged.
-flask_jwt_extended.jwt_required = jwt_required
-flask_jwt_extended.get_jwt_identity = get_jwt_identity
-
-from .routes import api  # noqa: E402
+from .extensions import db
+from .routes import api
 
 
 def ensure_auth_schema():
@@ -26,6 +16,8 @@ def ensure_auth_schema():
         return
 
     existing = {column["name"] for column in inspector.get_columns("user")}
+    # Keep migrations additive so the existing Render database and local SQLite files
+    # remain compatible while Firebase becomes the identity authority.
     additions = {
         "firebase_uid": "VARCHAR(128)",
         "email_verified_at": "TIMESTAMP",
@@ -51,12 +43,8 @@ def create_app(test_config=None):
 
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
     app.config.setdefault("MAX_CONTENT_LENGTH", 2 * 1024 * 1024)
-    app.config.setdefault("FIREBASE_REQUIRE_VERIFIED_EMAIL", True)
 
     db.init_app(app)
-    # Kept initialized only for backwards-compatible imports in the old auth route code.
-    # No production finance endpoint accepts Ledgerly-issued JWTs anymore.
-    jwt.init_app(app)
     CORS(
         app,
         resources={r"/api/*": {"origins": os.getenv("CLIENT_ORIGIN", "http://localhost:5173")}},
@@ -65,22 +53,11 @@ def create_app(test_config=None):
     app.register_blueprint(api)
 
     @app.before_request
-    def firebase_account_lifecycle():
-        # Firebase owns registration, login, verification, and password recovery.
+    def firebase_owned_auth_routes():
         if request.path.startswith("/api/auth/"):
             return jsonify({"error": "Authentication is managed by Firebase Authentication."}), 410
         if request.path == "/api/account/password":
             return jsonify({"error": "Password changes are managed by Firebase Authentication."}), 410
-        if request.path == "/api/account" and request.method == "DELETE":
-            user = authenticate_request()
-            if not user:
-                return jsonify({"error": "A valid Firebase session is required."}), 401
-            Transaction.query.filter_by(user_id=user.id).delete()
-            Budget.query.filter_by(user_id=user.id).delete()
-            Goal.query.filter_by(user_id=user.id).delete()
-            db.session.delete(user)
-            db.session.commit()
-            return jsonify({"deleted": True})
         return None
 
     @app.after_request
