@@ -19,14 +19,30 @@ def _firebase_app():
     except ValueError:
         raw = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON", "").strip()
         project_id = os.getenv("FIREBASE_PROJECT_ID", "").strip()
+        application_credentials = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
+
         if raw:
             info = json.loads(raw)
             resolved_project_id = info.get("project_id") or project_id
             return firebase_admin.initialize_app(credentials.Certificate(info), {"projectId": resolved_project_id})
+
+        if application_credentials:
+            # GOOGLE_APPLICATION_CREDENTIALS points at a Render Secret File. The Google
+            # auth stack reads that service-account JSON without exposing its contents as
+            # an environment variable or committing credentials to the repository.
+            return firebase_admin.initialize_app(
+                credentials.ApplicationDefault(),
+                {"projectId": project_id} if project_id else None,
+            )
+
         if project_id:
-            # Useful on hosts that expose Google Application Default Credentials.
+            # Useful on Google-hosted environments that expose Application Default Credentials.
             return firebase_admin.initialize_app(options={"projectId": project_id})
-        raise RuntimeError("Firebase Admin is not configured. Set FIREBASE_SERVICE_ACCOUNT_JSON or FIREBASE_PROJECT_ID.")
+
+        raise RuntimeError(
+            "Firebase Admin is not configured. Set GOOGLE_APPLICATION_CREDENTIALS, "
+            "FIREBASE_SERVICE_ACCOUNT_JSON, or FIREBASE_PROJECT_ID with platform credentials."
+        )
 
 
 def _test_claims(token):
