@@ -1,0 +1,24 @@
+/* Defensive layout guards: persisted/legacy data should never force cards wider than the viewport. */
+.metric,
+.card,
+.transaction,
+.transaction-main,
+.amount-wrap,
+.category-list > div,
+.insight-list > div {
+  min-width: 0;
+}
+
+.metric strong,
+.card strong,
+.amount-wrap strong,
+.budget-value,
+.category-list strong,
+.insight-list strong,
+.transaction-main strong,
+.transaction-main span,
+.transaction-main small {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
