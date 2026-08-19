@@ -3,6 +3,7 @@ import { firebaseAuth } from './firebase'
 import type { Account, Dashboard, Goal, Transaction } from './types'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
+export const MAX_MONEY = 999_999_999.99
 
 export type AuthUser = { email: string; emailVerified: boolean }
 export type AuthSuccess = { accessToken: string; user: AuthUser }
@@ -18,6 +19,14 @@ export class ApiError extends Error {
     this.status = status
     this.code = code
     this.details = details
+  }
+}
+
+function assertMoney(value: number, label: string, allowZero = false) {
+  const validMinimum = allowZero ? value >= 0 : value > 0
+  if (!Number.isFinite(value) || !validMinimum || value > MAX_MONEY) {
+    const minimum = allowZero ? '$0.00' : '$0.01'
+    throw new Error(`${label} must be between ${minimum} and $999,999,999.99.`)
   }
 }
 
@@ -57,6 +66,17 @@ export type TransactionInput = {
   notes?: string
 }
 
+function validateTransaction(payload: TransactionInput) {
+  assertMoney(Math.abs(payload.amount), 'Transaction amount')
+  return payload
+}
+
+function validateGoal(payload: { name: string; target: number; saved: number }) {
+  assertMoney(payload.target, 'Goal target')
+  assertMoney(payload.saved, 'Saved amount', true)
+  return payload
+}
+
 export const api = {
   account: () => request<Account>('/account'),
   changePassword: async (currentPassword: string, newPassword: string) => {
@@ -77,17 +97,30 @@ export const api = {
     return result
   },
   dashboard: () => request<Dashboard>('/dashboard'),
-  addTransaction: (payload: TransactionInput) => request<Transaction>('/transactions', { method: 'POST', body: JSON.stringify(payload) }),
+  addTransaction: (payload: TransactionInput) => request<Transaction>('/transactions', { method: 'POST', body: JSON.stringify(validateTransaction(payload)) }),
   importTransactions: (transactions: TransactionInput[]) =>
-    request<{ imported: number }>('/transactions/import', { method: 'POST', body: JSON.stringify({ transactions }) }),
-  updateTransaction: (id: number, payload: TransactionInput) => request<Transaction>(`/transactions/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
+    request<{ imported: number }>('/transactions/import', { method: 'POST', body: JSON.stringify({ transactions: transactions.map(validateTransaction) }) }),
+  updateTransaction: (id: number, payload: TransactionInput) => request<Transaction>(`/transactions/${id}`, { method: 'PATCH', body: JSON.stringify(validateTransaction(payload)) }),
   deleteTransaction: (id: number) => request<{ deleted: number }>(`/transactions/${id}`, { method: 'DELETE' }),
-  addBudget: (payload: { category: string; limit: number }) => request('/budgets', { method: 'POST', body: JSON.stringify(payload) }),
-  updateBudget: (id: number, limit: number) => request(`/budgets/${id}`, { method: 'PATCH', body: JSON.stringify({ limit }) }),
+  addBudget: (payload: { category: string; limit: number }) => {
+    assertMoney(payload.limit, 'Monthly budget')
+    return request('/budgets', { method: 'POST', body: JSON.stringify(payload) })
+  },
+  updateBudget: (id: number, limit: number) => {
+    assertMoney(limit, 'Monthly budget')
+    return request(`/budgets/${id}`, { method: 'PATCH', body: JSON.stringify({ limit }) })
+  },
   deleteBudget: (id: number) => request<{ deleted: number }>(`/budgets/${id}`, { method: 'DELETE' }),
-  addGoal: (payload: { name: string; target: number; saved: number }) => request<Goal>('/goals', { method: 'POST', body: JSON.stringify(payload) }),
-  updateGoal: (id: number, payload: Partial<Pick<Goal, 'name' | 'target' | 'saved'>>) => request<Goal>(`/goals/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
-  contributeGoal: (id: number, amount: number) => request<Goal>(`/goals/${id}/contribute`, { method: 'POST', body: JSON.stringify({ amount }) }),
+  addGoal: (payload: { name: string; target: number; saved: number }) => request<Goal>('/goals', { method: 'POST', body: JSON.stringify(validateGoal(payload)) }),
+  updateGoal: (id: number, payload: Partial<Pick<Goal, 'name' | 'target' | 'saved'>>) => {
+    if (payload.target !== undefined) assertMoney(payload.target, 'Goal target')
+    if (payload.saved !== undefined) assertMoney(payload.saved, 'Saved amount', true)
+    return request<Goal>(`/goals/${id}`, { method: 'PATCH', body: JSON.stringify(payload) })
+  },
+  contributeGoal: (id: number, amount: number) => {
+    assertMoney(amount, 'Contribution')
+    return request<Goal>(`/goals/${id}/contribute`, { method: 'POST', body: JSON.stringify({ amount }) })
+  },
   deleteGoal: (id: number) => request<{ deleted: number }>(`/goals/${id}`, { method: 'DELETE' }),
   clearData: () => request<{ cleared: boolean }>('/data', { method: 'DELETE' }),
   seedDemo: () => request<{ seeded: boolean }>('/demo/seed', { method: 'POST' }),

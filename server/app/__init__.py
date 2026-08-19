@@ -1,3 +1,4 @@
+import math
 import os
 
 from flask import Flask, jsonify, request
@@ -8,6 +9,9 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from .config import Config
 from .extensions import db
 from .routes import api
+
+MAX_MONEY = 999_999_999.99
+MONEY_FIELDS = {"amount", "limit", "target", "saved"}
 
 
 def ensure_auth_schema():
@@ -35,6 +39,28 @@ def ensure_auth_schema():
     db.session.commit()
 
 
+def oversized_money_value(payload):
+    """Return the first monetary field that exceeds Ledgerly's supported range."""
+    if isinstance(payload, dict):
+        for key, value in payload.items():
+            if key in MONEY_FIELDS:
+                try:
+                    number = float(value)
+                except (TypeError, ValueError):
+                    continue
+                if not math.isfinite(number) or abs(number) > MAX_MONEY:
+                    return key
+            nested = oversized_money_value(value)
+            if nested:
+                return nested
+    elif isinstance(payload, list):
+        for item in payload:
+            nested = oversized_money_value(item)
+            if nested:
+                return nested
+    return None
+
+
 def create_app(test_config=None):
     app = Flask(__name__)
     app.config.from_object(Config)
@@ -53,11 +79,19 @@ def create_app(test_config=None):
     app.register_blueprint(api)
 
     @app.before_request
-    def firebase_owned_auth_routes():
+    def validate_api_request():
         if request.path.startswith("/api/auth/"):
             return jsonify({"error": "Authentication is managed by Firebase Authentication."}), 410
         if request.path == "/api/account/password":
             return jsonify({"error": "Password changes are managed by Firebase Authentication."}), 410
+
+        if request.path.startswith("/api/") and request.method in {"POST", "PUT", "PATCH"} and request.is_json:
+            payload = request.get_json(silent=True)
+            oversized_field = oversized_money_value(payload)
+            if oversized_field:
+                return jsonify({
+                    "error": f"{oversized_field.capitalize()} cannot exceed $999,999,999.99."
+                }), 400
         return None
 
     @app.after_request

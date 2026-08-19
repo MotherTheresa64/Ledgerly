@@ -37,6 +37,30 @@ def test_rejects_invalid_transaction(client, auth_headers):
     assert response.status_code == 400
 
 
+def test_rejects_oversized_transaction_amount(client, auth_headers):
+    response = client.post("/api/transactions", headers=auth_headers, json={
+        "description": "Impossible purchase",
+        "amount": -1_000_000_000,
+        "category": "Shopping",
+        "date": date.today().isoformat(),
+    })
+    assert response.status_code == 400
+    assert "999,999,999.99" in response.get_json()["error"]
+
+
+def test_rejects_oversized_import_amount(client, auth_headers):
+    response = client.post("/api/transactions/import", headers=auth_headers, json={
+        "transactions": [{
+            "description": "Impossible import",
+            "amount": 1_000_000_000,
+            "category": "Income",
+            "date": date.today().isoformat(),
+        }]
+    })
+    assert response.status_code == 400
+    assert "999,999,999.99" in response.get_json()["error"]
+
+
 def test_demo_seed(client, auth_headers):
     response = client.post("/api/demo/seed", headers=auth_headers)
     assert response.status_code == 201
