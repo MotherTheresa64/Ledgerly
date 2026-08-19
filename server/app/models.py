@@ -8,12 +8,30 @@ class User(db.Model):
     email = db.Column(db.String(180), unique=True, nullable=False, index=True)
     password_hash = db.Column(db.String(255), nullable=False)
     created_at = db.Column(db.DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
+    email_verified_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    verification_nonce = db.Column(db.String(96), nullable=True)
+    verification_sent_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    password_reset_nonce = db.Column(db.String(96), nullable=True)
+    password_reset_sent_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    password_changed_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    auth_version = db.Column(db.Integer, default=0, nullable=False)
+
+    @property
+    def email_verified(self):
+        return self.email_verified_at is not None
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
+        self.password_changed_at = datetime.now(UTC)
 
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
+
+
+class AuthRateLimit(db.Model):
+    key = db.Column(db.String(64), primary_key=True)
+    window_started_at = db.Column(db.DateTime(timezone=True), nullable=False)
+    count = db.Column(db.Integer, default=0, nullable=False)
 
 
 class Transaction(db.Model):

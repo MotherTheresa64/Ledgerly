@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { api, type TransactionInput } from './api'
+import AuthScreen from './AuthScreen'
 import type { Account, Budget, Dashboard, Goal, MonthlyTrend, Transaction } from './types'
 
 const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' })
@@ -41,7 +42,7 @@ function App() {
   const [token, setToken] = useState(localStorage.getItem('ledgerly_token'))
   const [data, setData] = useState<Dashboard | null>(null)
   const [error, setError] = useState('')
-  const [mode, setMode] = useState<'login' | 'register'>('login')
+  const [authMessage, setAuthMessage] = useState('')
   const [active, setActive] = useState<(typeof navItems)[number]>('Overview')
   const [toast, setToast] = useState({ message: '', tone: 'success' as 'success' | 'error' })
   const [refreshing, setRefreshing] = useState(false)
@@ -56,7 +57,8 @@ function App() {
     setToken(null)
     setData(null)
     setActive('Overview')
-    setError(reason)
+    setError('')
+    setAuthMessage(reason)
   }
 
   useEffect(() => {
@@ -79,50 +81,12 @@ function App() {
 
   useEffect(() => { if (token) void refresh() }, [token])
 
-  const handleAuth = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    const form = new FormData(event.currentTarget)
-    try {
-      setError('')
-      const result = mode === 'login'
-        ? await api.login(String(form.get('email')), String(form.get('password')))
-        : await api.register(String(form.get('email')), String(form.get('password')))
-      localStorage.setItem('ledgerly_token', result.accessToken)
-      setToken(result.accessToken)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Authentication failed')
-    }
-  }
-
   if (!token) {
-    return <main className="auth-shell">
-      <section className="brand-panel">
-        <div className="logo-mark">L</div>
-        <h1>Ledgerly</h1>
-        <p>Personal finance. Full control. Smarter decisions.</p>
-        <div className="brand-proof">
-          <div><strong>01</strong><span>Track every dollar</span></div>
-          <div><strong>02</strong><span>Build realistic budgets</span></div>
-          <div><strong>03</strong><span>Turn goals into progress</span></div>
-        </div>
-      </section>
-      <section className="auth-wrap">
-        <div className="auth-card">
-          <span className="eyebrow">WELCOME TO LEDGERLY</span>
-          <h2>{mode === 'login' ? 'Welcome back' : 'Create your account'}</h2>
-          <p>Build a clearer picture of your money.</p>
-          <form onSubmit={handleAuth}>
-            <label>Email<input name="email" type="email" autoComplete="email" required maxLength={180} placeholder="you@example.com" /></label>
-            <label>Password<input name="password" type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} minLength={8} maxLength={128} required placeholder="Minimum 8 characters" /></label>
-            {error && <div className="error" role="alert">{error}</div>}
-            <button className="primary" type="submit">{mode === 'login' ? 'Sign in' : 'Create account'}</button>
-          </form>
-          <button className="text-button" onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setError('') }}>
-            {mode === 'login' ? 'Need an account? Register' : 'Already registered? Sign in'}
-          </button>
-        </div>
-      </section>
-    </main>
+    return <AuthScreen initialMessage={authMessage} onAuthenticated={result => {
+      localStorage.setItem('ledgerly_token', result.accessToken)
+      setAuthMessage('')
+      setToken(result.accessToken)
+    }} />
   }
 
   return <div className="app-shell">
@@ -379,7 +343,7 @@ function SettingsPage({ data, refresh, notify, signOut }: { data: Dashboard; ref
   const changePassword = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (newPassword !== confirmPassword) return notify('New passwords do not match.', 'error')
-    try { setBusy('password'); await api.changePassword(currentPassword, newPassword); setCurrentPassword(''); setNewPassword(''); setConfirmPassword(''); notify('Password updated successfully.') }
+    try { setBusy('password'); await api.changePassword(currentPassword, newPassword); setCurrentPassword(''); setNewPassword(''); setConfirmPassword(''); notify('Password updated successfully. Other sessions have been signed out.') }
     catch (error) { notify(error instanceof Error ? error.message : 'Unable to change password', 'error') }
     finally { setBusy('') }
   }
@@ -446,9 +410,9 @@ function SettingsPage({ data, refresh, notify, signOut }: { data: Dashboard; ref
   }
 
   return <div className="settings-grid">
-    <article className="card settings-card"><div className="card-head"><div><h3>Account</h3><p>Your Ledgerly profile and usage summary.</p></div></div>{account ? <div className="account-summary"><div><span>Email</span><strong>{account.email}</strong></div><div><span>Member since</span><strong>{account.createdAt ? new Date(account.createdAt).toLocaleDateString() : '—'}</strong></div><div><span>Transactions</span><strong>{account.transactionCount}</strong></div><div><span>Budgets / goals</span><strong>{account.budgetCount} / {account.goalCount}</strong></div></div> : <div className="loading compact"><span className="spinner" />Loading account…</div>}</article>
+    <article className="card settings-card"><div className="card-head"><div><h3>Account</h3><p>Your Ledgerly profile and usage summary.</p></div></div>{account ? <div className="account-summary"><div><span>Email</span><strong>{account.email}</strong></div><div><span>Email status</span><strong className={account.emailVerified ? 'income' : 'expense'}>{account.emailVerified ? 'Verified' : 'Unverified'}</strong></div><div><span>Member since</span><strong>{account.createdAt ? new Date(account.createdAt).toLocaleDateString() : '—'}</strong></div><div><span>Transactions</span><strong>{account.transactionCount}</strong></div><div><span>Budgets / goals</span><strong>{account.budgetCount} / {account.goalCount}</strong></div></div> : <div className="loading compact"><span className="spinner" />Loading account…</div>}</article>
 
-    <article className="card settings-card"><div className="card-head"><div><h3>Change password</h3><p>Use a unique password of at least eight characters.</p></div></div><form className="stack" onSubmit={changePassword}><label>Current password<input type="password" autoComplete="current-password" required value={currentPassword} onChange={e => setCurrentPassword(e.target.value)} /></label><label>New password<input type="password" autoComplete="new-password" minLength={8} maxLength={128} required value={newPassword} onChange={e => setNewPassword(e.target.value)} /></label><label>Confirm new password<input type="password" autoComplete="new-password" minLength={8} maxLength={128} required value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} /></label><button className="primary" disabled={busy === 'password'}>{busy === 'password' ? 'Updating…' : 'Update password'}</button></form></article>
+    <article className="card settings-card"><div className="card-head"><div><h3>Change password</h3><p>Use a unique password with at least 10 characters, a letter, and a number.</p></div></div><form className="stack" onSubmit={changePassword}><label>Current password<input type="password" autoComplete="current-password" required value={currentPassword} onChange={e => setCurrentPassword(e.target.value)} /></label><label>New password<input type="password" autoComplete="new-password" minLength={10} maxLength={128} required value={newPassword} onChange={e => setNewPassword(e.target.value)} /></label><label>Confirm new password<input type="password" autoComplete="new-password" minLength={10} maxLength={128} required value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} /></label><button className="primary" disabled={busy === 'password'}>{busy === 'password' ? 'Updating…' : 'Update password'}</button></form></article>
 
     <article className="card settings-card data-tools"><div className="card-head"><div><h3>Data portability</h3><p>Your transaction history belongs to you.</p></div></div><div className="settings-actions"><button className="secondary" onClick={exportCsv} disabled={!data.transactions.length}>Export CSV</button><label className="file-button">{busy === 'import' ? 'Importing…' : 'Import CSV'}<input type="file" accept=".csv,text/csv" disabled={busy === 'import'} onChange={e => { const file = e.target.files?.[0]; if (file) void importCsv(file); e.currentTarget.value = '' }} /></label></div><small>CSV headers: description, amount, category, date, notes. Imports are validated before any rows are saved.</small></article>
 
