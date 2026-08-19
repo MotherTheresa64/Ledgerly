@@ -19,9 +19,6 @@ def env_bool(name, default=False):
 
 class Config:
     SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-change-in-production")
-    # Flask-JWT remains initialized only so legacy route imports stay harmless during migration.
-    # Production authorization is Firebase-only.
-    JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "legacy-jwt-not-used-for-production-auth")
     SQLALCHEMY_DATABASE_URI = database_url()
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     JSON_SORT_KEYS = False
