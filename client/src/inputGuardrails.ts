@@ -16,8 +16,11 @@ function addCounter(field: HTMLInputElement | HTMLTextAreaElement, max: number, 
   }
 
   const update = () => {
-    if (counter) counter.textContent = `${field.value.length} / ${max}`
+    if (!counter) return
+    const next = `${field.value.length} / ${max}`
+    if (counter.textContent !== next) counter.textContent = next
   }
+
   if (!field.dataset.ledgerlyCounterBound) {
     field.addEventListener('input', update)
     field.dataset.ledgerlyCounterBound = 'true'
@@ -41,6 +44,20 @@ function applyTransactionTextLimits() {
 
 export function installTransactionTextLimits() {
   applyTransactionTextLimits()
-  const observer = new MutationObserver(applyTransactionTextLimits)
+
+  let scheduled = false
+  const observer = new MutationObserver(mutations => {
+    // Only re-scan when React actually adds/removes elements. Counter text updates
+    // must not recursively trigger another full DOM scan on mobile browsers.
+    if (!mutations.some(mutation => mutation.addedNodes.length || mutation.removedNodes.length)) return
+    if (scheduled) return
+
+    scheduled = true
+    requestAnimationFrame(() => {
+      scheduled = false
+      applyTransactionTextLimits()
+    })
+  })
+
   observer.observe(document.body, { childList: true, subtree: true })
 }
