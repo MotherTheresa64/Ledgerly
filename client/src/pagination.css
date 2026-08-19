@@ -1,0 +1,62 @@
+.transaction-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.transaction-pagination button {
+  min-width: 38px;
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card2);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.transaction-pagination button:hover:not(:disabled) {
+  border-color: var(--green);
+}
+
+.transaction-pagination button.active {
+  background: var(--green);
+  border-color: var(--green);
+  color: #061008;
+  font-weight: 800;
+}
+
+.transaction-pagination button:disabled {
+  opacity: .4;
+  cursor: not-allowed;
+}
+
+.pagination-ellipsis {
+  color: var(--subtle);
+  padding: 0 2px;
+}
+
+.pagination-summary {
+  width: 100%;
+  text-align: center;
+  color: var(--subtle);
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+@media (max-width: 600px) {
+  .transaction-pagination {
+    gap: 6px;
+  }
+
+  .transaction-pagination button {
+    min-width: 42px;
+    min-height: 42px;
+    padding: 8px;
+  }
+}
