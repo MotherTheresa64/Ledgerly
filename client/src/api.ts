@@ -24,7 +24,13 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   })
 
   const data = await response.json().catch(() => ({}))
-  if (!response.ok) throw new ApiError(data.error || data.msg || 'Request failed', response.status)
+  if (!response.ok) {
+    if (response.status === 401 && token) {
+      localStorage.removeItem('ledgerly_token')
+      window.dispatchEvent(new CustomEvent('ledgerly:unauthorized'))
+    }
+    throw new ApiError(data.error || data.msg || 'Request failed', response.status)
+  }
   return data as T
 }
 
