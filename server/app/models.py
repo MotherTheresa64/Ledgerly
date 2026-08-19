@@ -6,6 +6,7 @@ from .extensions import db
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     email = db.Column(db.String(180), unique=True, nullable=False, index=True)
+    firebase_uid = db.Column(db.String(128), unique=True, nullable=True, index=True)
     password_hash = db.Column(db.String(255), nullable=False)
     created_at = db.Column(db.DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
     email_verified_at = db.Column(db.DateTime(timezone=True), nullable=True)
