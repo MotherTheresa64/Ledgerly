@@ -31,6 +31,7 @@ export type MonthlyTrend = {
 
 export type Account = {
   email: string
+  emailVerified: boolean
   createdAt: string | null
   transactionCount: number
   budgetCount: number
