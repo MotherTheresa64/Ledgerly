@@ -1,20 +1,25 @@
 # Ledgerly
 
-Ledgerly is a complete full-stack personal-finance application for tracking cash flow, managing monthly budgets, and building savings goals through a polished responsive dashboard.
+Ledgerly is a full-stack personal-finance application for tracking cash flow, managing monthly budgets, and building savings goals through a polished responsive dashboard.
 
 ## Why this project exists
 
-Ledgerly was built as a production-minded portfolio application rather than a single-screen CRUD demo. It demonstrates full-stack product design, authenticated API architecture, user-scoped relational data, analytics, destructive-action safety, data portability, test coverage, CI, and deployment configuration.
+Ledgerly was built as a production-minded application rather than a single-screen CRUD demo. It demonstrates full-stack product design, authenticated API architecture, user-scoped relational data, analytics, account recovery, transactional email, destructive-action safety, data portability, test coverage, CI, and deployment configuration.
 
 ## v1.0 feature set
 
 ### Authentication and account management
 - User registration and login
 - Password hashing with Werkzeug
+- Email verification for new production accounts
+- Resend-verification flow with cooldowns
+- Forgot-password and one-time password-reset links
+- Signed, expiring email verification and reset tokens
+- Password policy requiring 10–128 characters with a letter and a number
 - Signed JWT access tokens with configurable expiry
-- Automatic expired-session recovery in the client
-- Account profile summary
-- Authenticated password changes
+- Server-side session revocation after password changes or resets
+- Durable per-IP rate limits on public authentication endpoints
+- Account profile and email-verification status
 - Password-confirmed account deletion
 - Strict user ownership checks on every protected resource
 
@@ -59,11 +64,13 @@ Ledgerly was built as a production-minded portfolio application rather than a si
 - Permanently delete the account and all associated data
 
 ### Product quality
-- Responsive desktop, tablet, and mobile layouts
+- Native-width desktop, tablet, and mobile layouts without requiring browser zoom adjustments
 - Keyboard-visible focus states and semantic form labels
-- Loading, empty, error, success, over-budget, completed-goal, and expired-session states
+- Loading, empty, error, success, over-budget, completed-goal, verification, recovery, and expired-session states
 - Confirmation flows for destructive operations
-- Server-side input validation
+- Server-side input validation and request-size limits
+- Authentication endpoint rate limiting
+- API security headers and no-store responses
 - PostgreSQL production configuration with SQLite local fallback
 - Render Blueprint for frontend, API, health checks, and PostgreSQL
 - Dependency update automation with Dependabot
@@ -71,29 +78,36 @@ Ledgerly was built as a production-minded portfolio application rather than a si
 
 ## Tech stack
 
-**Frontend:** React 18, TypeScript, Vite 8, CSS  
+**Frontend:** React 18, TypeScript, Vite, CSS  
 **Backend:** Python, Flask, Flask-SQLAlchemy, Flask-JWT-Extended  
 **Database:** PostgreSQL in production / SQLite locally  
+**Email:** Resend transactional email API  
 **Testing:** pytest  
-**DevOps:** GitHub Actions, Dependabot, Render Blueprint
+**DevOps:** GitHub Actions, Dependabot, Render
 
 ## Repository structure
 
 ```text
 Ledgerly/
-├── client/                  # React + TypeScript SPA
+├── client/
 │   └── src/
-│       ├── App.tsx          # Application UI and product workflows
+│       ├── App.tsx          # Finance application and product workflows
+│       ├── AuthScreen.tsx   # Sign-in, registration, verification, recovery
 │       ├── api.ts           # Typed API client
-│       ├── styles.css       # Responsive design system
+│       ├── styles.css       # Base responsive design system
+│       ├── consumer.css     # Consumer/mobile responsive hardening
 │       └── types.ts         # Shared frontend domain types
 ├── server/
 │   ├── app/
-│   │   ├── models.py        # User, Transaction, Budget, Goal models
-│   │   ├── routes.py        # Authenticated REST API
+│   │   ├── models.py        # Users, rate limits, transactions, budgets, goals
+│   │   ├── routes.py        # Auth and finance REST API
+│   │   ├── email_service.py # Transactional email delivery
+│   │   ├── rate_limit.py    # Durable auth abuse limits
 │   │   └── config.py        # Environment/database/security config
-│   └── tests/               # API, security, isolation, CRUD, import tests
-├── docs/ARCHITECTURE.md
+│   └── tests/               # API, auth security, isolation, CRUD, import tests
+├── docs/
+│   ├── ARCHITECTURE.md
+│   └── CONSUMER_READINESS.md
 ├── SECURITY.md
 ├── render.yaml
 └── .github/workflows/ci.yml
@@ -126,6 +140,8 @@ python run.py
 
 The API runs at `http://localhost:5000`. The health endpoint is `http://localhost:5000/api/health`.
 
+For local development without an email provider, set `EMAIL_VERIFICATION_REQUIRED=false`. Production should keep verification enabled.
+
 ### 2. Frontend
 
 In another terminal:
@@ -140,7 +156,7 @@ The frontend runs at `http://localhost:5173` and defaults to `http://localhost:5
 
 ## Environment variables
 
-Copy `.env.example` values into the appropriate deployment environment.
+Never commit production secrets.
 
 Server:
 
@@ -150,6 +166,10 @@ JWT_SECRET_KEY=<different long random value>
 JWT_ACCESS_TOKEN_HOURS=12
 DATABASE_URL=<PostgreSQL URL in production>
 CLIENT_ORIGIN=<frontend origin>
+PUBLIC_APP_URL=<frontend public URL>
+RESEND_API_KEY=<Resend API key>
+EMAIL_FROM=Ledgerly <hello@your-verified-domain.example>
+EMAIL_VERIFICATION_REQUIRED=true
 ```
 
 Client:
@@ -157,8 +177,6 @@ Client:
 ```text
 VITE_API_URL=<API origin>/api
 ```
-
-Never commit production secrets.
 
 ## Test and release checks
 
@@ -198,6 +216,10 @@ Imported amounts use the signed storage representation: positive numbers are inc
 ```text
 POST   /api/auth/register
 POST   /api/auth/login
+POST   /api/auth/verify-email
+POST   /api/auth/resend-verification
+POST   /api/auth/forgot-password
+POST   /api/auth/reset-password
 GET    /api/account
 PATCH  /api/account/password
 DELETE /api/account
@@ -222,25 +244,16 @@ POST   /api/demo/reset
 GET    /api/health
 ```
 
-See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for implementation decisions and [`SECURITY.md`](SECURITY.md) for security assumptions and deployment requirements.
+See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/CONSUMER_READINESS.md`](docs/CONSUMER_READINESS.md), and [`SECURITY.md`](SECURITY.md) for implementation and deployment requirements.
 
 ## Deployment
 
-`render.yaml` defines the complete Render deployment:
+`render.yaml` defines the Render topology:
 
 1. PostgreSQL database
 2. Flask/Gunicorn API service with `/api/health` health checks
 3. React static frontend
 
-When creating the Blueprint, set:
+Production requires the frontend/API origins plus a verified transactional-email sender. Email verification should remain enabled for public use.
 
-- API `CLIENT_ORIGIN` to the deployed Ledgerly frontend origin.
-- Frontend `VITE_API_URL` to the deployed API URL plus `/api`.
-
-Render will then rebuild affected services from the repository on subsequent updates.
-
-## Status
-
-**Ledgerly v1.0 is feature-complete.** The application implements the entire intended portfolio product scope end-to-end: authentication, account lifecycle, finance CRUD, analytics, budgets, goals, search/filter/sort, import/export, destructive-data controls, responsive UI, automated tests, security documentation, dependency maintenance, CI, and production deployment configuration.
-
-Large external integrations such as bank aggregation are intentionally outside the v1.0 product scope because they require third-party financial credentials and do not change the core full-stack architecture demonstrated here.
+Large external integrations such as bank aggregation are intentionally outside the v1.0 scope because they require third-party financial credentials. Ledgerly's core finance workflows are fully usable without connecting a bank account.
