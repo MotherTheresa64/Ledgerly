@@ -5,6 +5,7 @@ import ThemeSwitcher from './ThemeSwitcher'
 import './styles.css'
 import './consumer.css'
 import './themes.css'
+import './guardrails.css'
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
