@@ -1,15 +1,7 @@
+import { firebaseAuth } from './firebase'
 import type { Account, Dashboard, Goal, Transaction } from './types'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
-
-export type AuthUser = { email: string; emailVerified: boolean }
-export type AuthSuccess = { accessToken: string; user: AuthUser }
-export type RegisterResult = AuthSuccess | {
-  verificationRequired: true
-  emailSent: boolean
-  email: string
-  message: string
-}
 
 export class ApiError extends Error {
   status: number
@@ -26,7 +18,8 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const token = localStorage.getItem('ledgerly_token')
+  const user = firebaseAuth.currentUser
+  const token = user ? await user.getIdToken() : ''
   const response = await fetch(`${API_URL}${path}`, {
     ...options,
     headers: {
@@ -38,8 +31,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
   const data = await response.json().catch(() => ({})) as Record<string, unknown>
   if (!response.ok) {
-    if (response.status === 401 && token) {
-      localStorage.removeItem('ledgerly_token')
+    if (response.status === 401 && user) {
       window.dispatchEvent(new CustomEvent('ledgerly:unauthorized'))
     }
     throw new ApiError(String(data.error || data.msg || 'Request failed'), response.status, typeof data.code === 'string' ? data.code : undefined, data)
@@ -56,26 +48,8 @@ export type TransactionInput = {
 }
 
 export const api = {
-  register: (email: string, password: string) =>
-    request<RegisterResult>('/auth/register', { method: 'POST', body: JSON.stringify({ email, password }) }),
-  login: (email: string, password: string) =>
-    request<AuthSuccess>('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
-  verifyEmail: (token: string) =>
-    request<AuthSuccess & { verified: true }>('/auth/verify-email', { method: 'POST', body: JSON.stringify({ token }) }),
-  resendVerification: (email: string) =>
-    request<{ message: string }>('/auth/resend-verification', { method: 'POST', body: JSON.stringify({ email }) }),
-  forgotPassword: (email: string) =>
-    request<{ message: string }>('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) }),
-  resetPassword: (token: string, newPassword: string) =>
-    request<{ updated: boolean }>('/auth/reset-password', { method: 'POST', body: JSON.stringify({ token, newPassword }) }),
   account: () => request<Account>('/account'),
-  changePassword: async (currentPassword: string, newPassword: string) => {
-    const result = await request<{ updated: boolean; accessToken: string }>('/account/password', { method: 'PATCH', body: JSON.stringify({ currentPassword, newPassword }) })
-    localStorage.setItem('ledgerly_token', result.accessToken)
-    return result
-  },
-  deleteAccount: (password: string) =>
-    request<{ deleted: boolean }>('/account', { method: 'DELETE', body: JSON.stringify({ password }) }),
+  deleteAccountData: () => request<{ deleted: boolean }>('/account', { method: 'DELETE' }),
   dashboard: () => request<Dashboard>('/dashboard'),
   addTransaction: (payload: TransactionInput) => request<Transaction>('/transactions', { method: 'POST', body: JSON.stringify(payload) }),
   importTransactions: (transactions: TransactionInput[]) =>
