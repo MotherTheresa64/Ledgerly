@@ -14,6 +14,7 @@ class User(db.Model):
     password_reset_nonce = db.Column(db.String(96), nullable=True)
     password_reset_sent_at = db.Column(db.DateTime(timezone=True), nullable=True)
     password_changed_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    auth_version = db.Column(db.Integer, default=0, nullable=False)
 
     @property
     def email_verified(self):
