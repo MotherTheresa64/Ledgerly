@@ -21,16 +21,16 @@ def _firebase_app():
         project_id = os.getenv("FIREBASE_PROJECT_ID", "").strip()
         if raw:
             info = json.loads(raw)
-            return firebase_admin.initialize_app(credentials.Certificate(info), {"projectId": info.get("project_id") or project_id})
+            resolved_project_id = info.get("project_id") or project_id
+            return firebase_admin.initialize_app(credentials.Certificate(info), {"projectId": resolved_project_id})
         if project_id:
+            # Useful on hosts that expose Google Application Default Credentials.
             return firebase_admin.initialize_app(options={"projectId": project_id})
         raise RuntimeError("Firebase Admin is not configured. Set FIREBASE_SERVICE_ACCOUNT_JSON or FIREBASE_PROJECT_ID.")
 
 
 def _test_claims(token):
-    if not current_app.testing:
-        return None
-    if not token.startswith("test-firebase:"):
+    if not current_app.testing or not token.startswith("test-firebase:"):
         return None
     _, uid, email = token.split(":", 2)
     return {"uid": uid, "email": email, "email_verified": True}
@@ -81,9 +81,10 @@ def _ledgerly_user_for_claims(claims):
         return existing
 
     user = User(email=email, firebase_uid=uid)
-    # Legacy local-password storage is retained only for backwards-compatible schema shape;
-    # Firebase is the sole credential authority for new accounts.
-    user.set_password(secrets.token_urlsafe(48))
+    # The existing production table has a non-null password_hash column from Ledgerly's
+    # original local-auth implementation. Store an unusable random placeholder; Firebase
+    # is the only credential authority and this value is never checked.
+    user.set_legacy_placeholder(secrets.token_urlsafe(48))
     if verified:
         user.email_verified_at = datetime.now(UTC)
     db.session.add(user)
@@ -95,7 +96,7 @@ def authenticate_request():
     try:
         claims = verify_bearer_token()
     except Exception:
-        current_app.logger.exception("Firebase token verification failed")
+        current_app.logger.warning("Firebase token verification failed", exc_info=True)
         return None
     if not claims:
         return None
@@ -107,23 +108,18 @@ def authenticate_request():
     return user
 
 
-def firebase_required(fn=None):
+def firebase_required():
     def decorator(view):
         @wraps(view)
         def wrapped(*args, **kwargs):
             if not authenticate_request():
-                return jsonify({"error": "A valid Firebase session is required."}), 401
+                return jsonify({"error": "A valid, verified Firebase session is required."}), 401
             return view(*args, **kwargs)
         return wrapped
-    return decorator(fn) if fn else decorator
-
-
-# Compatibility names let the finance routes keep their established decorators while
-# the underlying identity provider is Firebase rather than Flask-JWT-Extended.
-def jwt_required():
-    return firebase_required()
+    return decorator
 
 
 def get_jwt_identity():
+    """Return the internal Ledgerly user id for finance-domain ownership queries."""
     user = getattr(g, "ledgerly_user", None)
     return str(user.id) if user else None
