@@ -1,11 +1,14 @@
 from calendar import monthrange
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 import re
+import secrets
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, current_app, jsonify, request
 from flask_jwt_extended import create_access_token, get_jwt_identity, jwt_required
+from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from sqlalchemy import func
 
+from .email_service import send_password_reset_email, send_verification_email
 from .extensions import db
 from .models import Budget, Goal, Transaction, User
 
@@ -15,12 +18,75 @@ EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 MAX_IMPORT_ROWS = 1000
 
 
+def utcnow():
+    return datetime.now(UTC)
+
+
+def aware(value):
+    if value is None:
+        return None
+    return value if value.tzinfo else value.replace(tzinfo=UTC)
+
+
 def current_user_id():
     return int(get_jwt_identity())
 
 
 def current_user():
     return db.session.get(User, current_user_id())
+
+
+def issue_access_token(user):
+    return create_access_token(identity=str(user.id), additional_claims={"av": int(user.auth_version or 0)})
+
+
+def serializer():
+    return URLSafeTimedSerializer(current_app.config["SECRET_KEY"])
+
+
+def password_is_valid(password):
+    return 10 <= len(password) <= 128 and bool(re.search(r"[A-Za-z]", password)) and bool(re.search(r"\d", password))
+
+
+def email_cooldown_elapsed(sent_at):
+    sent_at = aware(sent_at)
+    if sent_at is None:
+        return True
+    elapsed = (utcnow() - sent_at).total_seconds()
+    return elapsed >= current_app.config["AUTH_EMAIL_COOLDOWN_SECONDS"]
+
+
+def verification_token(user):
+    return serializer().dumps({"uid": user.id, "nonce": user.verification_nonce}, salt="ledgerly-email-verification")
+
+
+def password_reset_token(user):
+    return serializer().dumps({"uid": user.id, "nonce": user.password_reset_nonce}, salt="ledgerly-password-reset")
+
+
+def load_timed_token(token, salt, max_age):
+    try:
+        return serializer().loads(token, salt=salt, max_age=max_age), None
+    except SignatureExpired:
+        return None, "This link has expired. Please request a new one."
+    except BadSignature:
+        return None, "This link is invalid or has already been replaced."
+
+
+def send_verification(user):
+    user.verification_nonce = secrets.token_urlsafe(32)
+    user.verification_sent_at = utcnow()
+    db.session.commit()
+    url = f"{current_app.config['PUBLIC_APP_URL']}/?verify={verification_token(user)}"
+    return send_verification_email(user.email, url)
+
+
+def send_reset(user):
+    user.password_reset_nonce = secrets.token_urlsafe(32)
+    user.password_reset_sent_at = utcnow()
+    db.session.commit()
+    url = f"{current_app.config['PUBLIC_APP_URL']}/?reset={password_reset_token(user)}"
+    return send_password_reset_email(user.email, url)
 
 
 def serialize_goal(goal):
@@ -119,15 +185,28 @@ def register():
     payload = request.get_json() or {}
     email = str(payload.get("email", "")).strip().lower()
     password = str(payload.get("password", ""))
-    if not EMAIL_RE.match(email) or len(email) > 180 or len(password) < 8 or len(password) > 128:
-        return {"error": "A valid email and an 8–128 character password are required."}, 400
+    if not EMAIL_RE.match(email) or len(email) > 180 or not password_is_valid(password):
+        return {"error": "Use a valid email and a 10–128 character password containing at least one letter and one number."}, 400
     if User.query.filter_by(email=email).first():
-        return {"error": "An account with that email already exists."}, 409
+        return {"error": "An account with that email already exists. Sign in or resend verification."}, 409
+
     user = User(email=email)
     user.set_password(password)
+    if not current_app.config["EMAIL_VERIFICATION_REQUIRED"]:
+        user.email_verified_at = utcnow()
     db.session.add(user)
     db.session.commit()
-    return {"accessToken": create_access_token(identity=str(user.id)), "user": {"email": user.email}}, 201
+
+    if user.email_verified:
+        return {"accessToken": issue_access_token(user), "user": {"email": user.email, "emailVerified": True}}, 201
+
+    delivered = send_verification(user)
+    return {
+        "verificationRequired": True,
+        "emailSent": delivered,
+        "email": user.email,
+        "message": "Account created. Check your email to verify your address." if delivered else "Account created, but the verification email could not be delivered. Try resend verification shortly.",
+    }, 201
 
 
 @api.post("/auth/login")
@@ -137,7 +216,67 @@ def login():
     user = User.query.filter_by(email=email).first()
     if not user or not user.check_password(str(payload.get("password", ""))):
         return {"error": "Invalid email or password."}, 401
-    return {"accessToken": create_access_token(identity=str(user.id)), "user": {"email": user.email}}
+    if current_app.config["EMAIL_VERIFICATION_REQUIRED"] and not user.email_verified:
+        return {"error": "Verify your email before signing in.", "code": "email_unverified", "email": user.email}, 403
+    return {"accessToken": issue_access_token(user), "user": {"email": user.email, "emailVerified": user.email_verified}}
+
+
+@api.post("/auth/verify-email")
+def verify_email():
+    payload = request.get_json() or {}
+    token = str(payload.get("token", ""))
+    data, error_message = load_timed_token(token, "ledgerly-email-verification", current_app.config["EMAIL_VERIFICATION_MAX_AGE_SECONDS"])
+    if error_message:
+        return {"error": error_message}, 400
+    user = db.session.get(User, int(data.get("uid", 0))) if data else None
+    if not user or not user.verification_nonce or not secrets.compare_digest(str(data.get("nonce", "")), user.verification_nonce):
+        return {"error": "This verification link is invalid or has already been used."}, 400
+    user.email_verified_at = utcnow()
+    user.verification_nonce = None
+    user.verification_sent_at = None
+    db.session.commit()
+    return {"verified": True, "accessToken": issue_access_token(user), "user": {"email": user.email, "emailVerified": True}}
+
+
+@api.post("/auth/resend-verification")
+def resend_verification():
+    payload = request.get_json() or {}
+    email = str(payload.get("email", "")).strip().lower()
+    user = User.query.filter_by(email=email).first() if EMAIL_RE.match(email) else None
+    if user and not user.email_verified and email_cooldown_elapsed(user.verification_sent_at):
+        send_verification(user)
+    return {"message": "If an unverified account exists for that email, a verification message has been sent."}
+
+
+@api.post("/auth/forgot-password")
+def forgot_password():
+    payload = request.get_json() or {}
+    email = str(payload.get("email", "")).strip().lower()
+    user = User.query.filter_by(email=email).first() if EMAIL_RE.match(email) else None
+    if user and email_cooldown_elapsed(user.password_reset_sent_at):
+        send_reset(user)
+    return {"message": "If an account exists for that email, a password reset message has been sent."}
+
+
+@api.post("/auth/reset-password")
+def reset_password():
+    payload = request.get_json() or {}
+    token = str(payload.get("token", ""))
+    new_password = str(payload.get("newPassword", ""))
+    if not password_is_valid(new_password):
+        return {"error": "Use a 10–128 character password containing at least one letter and one number."}, 400
+    data, error_message = load_timed_token(token, "ledgerly-password-reset", current_app.config["PASSWORD_RESET_MAX_AGE_SECONDS"])
+    if error_message:
+        return {"error": error_message}, 400
+    user = db.session.get(User, int(data.get("uid", 0))) if data else None
+    if not user or not user.password_reset_nonce or not secrets.compare_digest(str(data.get("nonce", "")), user.password_reset_nonce):
+        return {"error": "This reset link is invalid or has already been used."}, 400
+    user.set_password(new_password)
+    user.password_reset_nonce = None
+    user.password_reset_sent_at = None
+    user.auth_version = int(user.auth_version or 0) + 1
+    db.session.commit()
+    return {"updated": True}
 
 
 @api.get("/account")
@@ -148,6 +287,7 @@ def account():
         return {"error": "Account not found."}, 404
     return {
         "email": user.email,
+        "emailVerified": user.email_verified,
         "createdAt": user.created_at.isoformat() if user.created_at else None,
         "transactionCount": Transaction.query.filter_by(user_id=user.id).count(),
         "budgetCount": Budget.query.filter_by(user_id=user.id).count(),
@@ -164,13 +304,16 @@ def change_password():
     new_password = str(payload.get("newPassword", ""))
     if not user or not user.check_password(current_password):
         return {"error": "Current password is incorrect."}, 403
-    if len(new_password) < 8 or len(new_password) > 128:
-        return {"error": "New password must be 8–128 characters."}, 400
+    if not password_is_valid(new_password):
+        return {"error": "New password must be 10–128 characters and contain at least one letter and one number."}, 400
     if current_password == new_password:
         return {"error": "Choose a different password."}, 400
     user.set_password(new_password)
+    user.password_reset_nonce = None
+    user.password_reset_sent_at = None
+    user.auth_version = int(user.auth_version or 0) + 1
     db.session.commit()
-    return {"updated": True}
+    return {"updated": True, "accessToken": issue_access_token(user)}
 
 
 @api.delete("/account")
