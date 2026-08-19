@@ -9,6 +9,8 @@ def app():
         "TESTING": True,
         "SQLALCHEMY_DATABASE_URI": "sqlite://",
         "JWT_SECRET_KEY": "ledgerly-test-secret-key-32-bytes-minimum",
+        "SECRET_KEY": "ledgerly-test-app-secret-key-32-bytes-minimum",
+        "EMAIL_VERIFICATION_REQUIRED": False,
     })
     with app.app_context():
         db.create_all()
