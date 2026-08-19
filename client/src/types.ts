@@ -12,6 +12,7 @@ export type Budget = {
   category: string
   limit: number
   spent: number
+  remaining: number
 }
 
 export type Goal = {
@@ -19,6 +20,13 @@ export type Goal = {
   name: string
   target: number
   saved: number
+}
+
+export type MonthlyTrend = {
+  month: string
+  income: number
+  expenses: number
+  net: number
 }
 
 export type Dashboard = {
@@ -30,4 +38,5 @@ export type Dashboard = {
   transactions: Transaction[]
   budgets: Budget[]
   goals: Goal[]
+  monthlyTrend: MonthlyTrend[]
 }
