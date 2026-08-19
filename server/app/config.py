@@ -1,4 +1,5 @@
 import os
+from datetime import timedelta
 
 
 def database_url():
@@ -11,7 +12,9 @@ def database_url():
 
 
 class Config:
-    SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret")
-    JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "dev-jwt-secret")
+    SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-change-in-production")
+    JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "dev-jwt-secret-change-in-production")
+    JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=int(os.getenv("JWT_ACCESS_TOKEN_HOURS", "12")))
     SQLALCHEMY_DATABASE_URI = database_url()
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+    JSON_SORT_KEYS = False
