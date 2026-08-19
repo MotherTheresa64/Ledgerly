@@ -28,6 +28,12 @@ class User(db.Model):
         return check_password_hash(self.password_hash, password)
 
 
+class AuthRateLimit(db.Model):
+    key = db.Column(db.String(64), primary_key=True)
+    window_started_at = db.Column(db.DateTime(timezone=True), nullable=False)
+    count = db.Column(db.Integer, default=0, nullable=False)
+
+
 class Transaction(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
