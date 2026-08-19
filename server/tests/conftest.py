@@ -3,6 +3,10 @@ from app import create_app
 from app.extensions import db
 
 
+def firebase_headers(email="demo@example.com", uid="demo-uid"):
+    return {"Authorization": f"Bearer test-firebase:{uid}:{email}"}
+
+
 @pytest.fixture()
 def app():
     app = create_app({
@@ -10,7 +14,7 @@ def app():
         "SQLALCHEMY_DATABASE_URI": "sqlite://",
         "JWT_SECRET_KEY": "ledgerly-test-secret-key-32-bytes-minimum",
         "SECRET_KEY": "ledgerly-test-app-secret-key-32-bytes-minimum",
-        "EMAIL_VERIFICATION_REQUIRED": False,
+        "FIREBASE_REQUIRE_VERIFIED_EMAIL": True,
     })
     with app.app_context():
         db.create_all()
@@ -25,7 +29,5 @@ def client(app):
 
 
 @pytest.fixture()
-def auth_headers(client):
-    response = client.post("/api/auth/register", json={"email": "demo@example.com", "password": "password123"})
-    token = response.get_json()["accessToken"]
-    return {"Authorization": f"Bearer {token}"}
+def auth_headers():
+    return firebase_headers()

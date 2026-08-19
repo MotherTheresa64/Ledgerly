@@ -1,49 +1,69 @@
 import { FormEvent, useEffect, useState } from 'react'
-import { api, ApiError, type AuthSuccess } from './api'
+import {
+  createUserWithEmailAndPassword,
+  reload,
+  sendEmailVerification,
+  sendPasswordResetEmail,
+  signInWithEmailAndPassword,
+  signOut,
+} from 'firebase/auth'
+import type { AuthSuccess } from './api'
+import { firebaseAuth } from './firebase'
 
-type AuthMode = 'login' | 'register' | 'forgot' | 'check-email' | 'reset'
+type AuthMode = 'login' | 'register' | 'forgot' | 'check-email'
 
 type Props = {
   onAuthenticated: (result: AuthSuccess) => void
   initialMessage?: string
 }
 
+function friendlyAuthError(error: unknown) {
+  const code = typeof error === 'object' && error && 'code' in error ? String((error as { code?: string }).code) : ''
+  if (code.includes('invalid-credential') || code.includes('wrong-password') || code.includes('user-not-found')) return 'Invalid email or password.'
+  if (code.includes('email-already-in-use')) return 'An account with that email already exists.'
+  if (code.includes('weak-password')) return 'Choose a stronger password.'
+  if (code.includes('too-many-requests')) return 'Too many attempts. Please wait a moment and try again.'
+  if (code.includes('network-request-failed')) return 'Unable to reach the authentication service. Check your connection and try again.'
+  return error instanceof Error ? error.message.replace(/^Firebase:\s*/i, '') : 'Authentication failed.'
+}
+
 function AuthScreen({ onAuthenticated, initialMessage = '' }: Props) {
-  const params = new URLSearchParams(window.location.search)
-  const verifyToken = params.get('verify') || ''
-  const resetToken = params.get('reset') || ''
-  const [mode, setMode] = useState<AuthMode>(resetToken ? 'reset' : 'login')
+  const [mode, setMode] = useState<AuthMode>('login')
   const [email, setEmail] = useState('')
   const [message, setMessage] = useState(initialMessage)
   const [error, setError] = useState('')
-  const [busy, setBusy] = useState(Boolean(verifyToken))
-
-  const cleanAuthQuery = () => {
-    const url = new URL(window.location.href)
-    url.searchParams.delete('verify')
-    url.searchParams.delete('reset')
-    window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`)
-  }
+  const [busy, setBusy] = useState(false)
 
   useEffect(() => {
-    if (!verifyToken) return
-    let active = true
-    api.verifyEmail(verifyToken)
-      .then(result => {
-        if (!active) return
-        localStorage.setItem('ledgerly_token', result.accessToken)
-        cleanAuthQuery()
-        onAuthenticated(result)
-      })
-      .catch(err => {
-        if (!active) return
-        cleanAuthQuery()
-        setMode('login')
-        setError(err instanceof Error ? err.message : 'Unable to verify this email address.')
-      })
-      .finally(() => { if (active) setBusy(false) })
-    return () => { active = false }
-  }, [verifyToken, onAuthenticated])
+    void firebaseAuth.authStateReady().then(async () => {
+      const user = firebaseAuth.currentUser
+      if (!user || localStorage.getItem('ledgerly_token')) return
+      if (!user.emailVerified) {
+        setEmail(user.email || '')
+        setMode('check-email')
+        setMessage('Verify your email address, then continue into Ledgerly.')
+        return
+      }
+      // App.tsx clears Ledgerly's session marker when the user signs out. If Firebase
+      // still has a verified persisted session, close it here so sign-out is complete.
+      await signOut(firebaseAuth)
+    })
+  }, [])
+
+  const completeSignIn = async () => {
+    const user = firebaseAuth.currentUser
+    if (!user) throw new Error('Authentication session was not available.')
+    await reload(user)
+    if (!user.emailVerified) {
+      setEmail(user.email || '')
+      setMode('check-email')
+      setMessage('Check your inbox and verify your email before continuing.')
+      return
+    }
+    const accessToken = await user.getIdToken(true)
+    localStorage.setItem('ledgerly_token', accessToken)
+    onAuthenticated({ accessToken, user: { email: user.email || '', emailVerified: true } })
+  }
 
   const switchMode = (next: AuthMode) => {
     setMode(next)
@@ -57,40 +77,31 @@ function AuthScreen({ onAuthenticated, initialMessage = '' }: Props) {
     const submittedEmail = String(form.get('email') || '').trim()
     const password = String(form.get('password') || '')
     const confirm = String(form.get('confirmPassword') || '')
-    if (mode === 'register' && password !== confirm) {
-      setError('Passwords do not match.')
-      return
-    }
+    if (mode === 'register' && password !== confirm) return setError('Passwords do not match.')
 
     try {
       setBusy(true)
       setError('')
       setMessage('')
       if (mode === 'register') {
-        const result = await api.register(submittedEmail, password)
-        if ('verificationRequired' in result) {
-          setEmail(result.email)
-          setMode('check-email')
-          setMessage(result.message)
-          return
-        }
-        localStorage.setItem('ledgerly_token', result.accessToken)
-        onAuthenticated(result)
+        const credential = await createUserWithEmailAndPassword(firebaseAuth, submittedEmail, password)
+        await sendEmailVerification(credential.user)
+        setEmail(credential.user.email || submittedEmail)
+        setMode('check-email')
+        setMessage('Account created. Firebase sent a verification email to your inbox.')
         return
       }
 
-      const result = await api.login(submittedEmail, password)
-      localStorage.setItem('ledgerly_token', result.accessToken)
-      onAuthenticated(result)
-    } catch (err) {
-      if (err instanceof ApiError && err.code === 'email_unverified') {
-        const unverifiedEmail = typeof err.details.email === 'string' ? err.details.email : submittedEmail
-        setEmail(unverifiedEmail)
+      const credential = await signInWithEmailAndPassword(firebaseAuth, submittedEmail, password)
+      if (!credential.user.emailVerified) {
+        setEmail(credential.user.email || submittedEmail)
         setMode('check-email')
-        setMessage('Your account exists, but the email address still needs to be verified.')
-      } else {
-        setError(err instanceof Error ? err.message : 'Authentication failed.')
+        setMessage('Your account exists, but your email still needs to be verified.')
+        return
       }
+      await completeSignIn()
+    } catch (err) {
+      setError(friendlyAuthError(err))
     } finally {
       setBusy(false)
     }
@@ -98,56 +109,50 @@ function AuthScreen({ onAuthenticated, initialMessage = '' }: Props) {
 
   const forgotPassword = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    const form = new FormData(event.currentTarget)
-    const submittedEmail = String(form.get('email') || '').trim()
+    const submittedEmail = String(new FormData(event.currentTarget).get('email') || '').trim()
     try {
       setBusy(true)
       setError('')
-      const result = await api.forgotPassword(submittedEmail)
-      setMessage(result.message)
+      await sendPasswordResetEmail(firebaseAuth, submittedEmail)
+      setMessage('If an account can receive password-reset email at that address, Firebase has sent the reset instructions.')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to request a password reset.')
+      const code = typeof err === 'object' && err && 'code' in err ? String((err as { code?: string }).code) : ''
+      if (code.includes('user-not-found') || code.includes('invalid-email')) {
+        setMessage('If an account can receive password-reset email at that address, Firebase has sent the reset instructions.')
+      } else setError(friendlyAuthError(err))
     } finally { setBusy(false) }
   }
 
   const resendVerification = async () => {
-    if (!email) return switchMode('login')
-    try {
-      setBusy(true)
-      setError('')
-      const result = await api.resendVerification(email)
-      setMessage(result.message)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to resend verification.')
-    } finally { setBusy(false) }
-  }
-
-  const resetPassword = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    const form = new FormData(event.currentTarget)
-    const password = String(form.get('password') || '')
-    const confirm = String(form.get('confirmPassword') || '')
-    if (password !== confirm) {
-      setError('Passwords do not match.')
-      return
+    const user = firebaseAuth.currentUser
+    if (!user) {
+      setMessage('Sign in again first, then you can resend the verification email.')
+      return switchMode('login')
     }
     try {
       setBusy(true)
       setError('')
-      await api.resetPassword(resetToken, password)
-      cleanAuthQuery()
-      setMode('login')
-      setMessage('Password updated. You can sign in with your new password.')
+      await sendEmailVerification(user)
+      setMessage(`Verification email sent to ${user.email || email}.`)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to reset your password.')
+      setError(friendlyAuthError(err))
+    } finally { setBusy(false) }
+  }
+
+  const checkVerification = async () => {
+    try {
+      setBusy(true)
+      setError('')
+      await completeSignIn()
+    } catch (err) {
+      setError(friendlyAuthError(err))
     } finally { setBusy(false) }
   }
 
   const title = mode === 'register' ? 'Create your account'
     : mode === 'forgot' ? 'Reset your password'
       : mode === 'check-email' ? 'Check your email'
-        : mode === 'reset' ? 'Choose a new password'
-          : 'Welcome back'
+        : 'Welcome back'
 
   return <main className="auth-shell">
     <section className="brand-panel">
@@ -163,43 +168,36 @@ function AuthScreen({ onAuthenticated, initialMessage = '' }: Props) {
     <section className="auth-wrap">
       <div className="auth-card">
         <span className="eyebrow">WELCOME TO LEDGERLY</span>
-        <h2>{busy && verifyToken ? 'Verifying your email…' : title}</h2>
-        <p>{mode === 'forgot' ? 'Enter your account email and we’ll send a secure reset link.' : mode === 'check-email' ? `We sent a verification link to ${email || 'your email address'}.` : mode === 'reset' ? 'Use at least 10 characters with a letter and a number.' : 'Build a clearer picture of your money.'}</p>
+        <h2>{title}</h2>
+        <p>{mode === 'forgot' ? 'Enter your account email and Firebase will send secure reset instructions.' : mode === 'check-email' ? `Verify ${email || 'your email address'} before entering Ledgerly.` : 'Build a clearer picture of your money.'}</p>
 
         {message && <div className="success-message" role="status">{message}</div>}
         {error && <div className="error" role="alert">{error}</div>}
 
-        {busy && verifyToken ? <div className="loading compact"><span className="spinner" />Confirming verification link…</div> : <>
-          {(mode === 'login' || mode === 'register') && <form onSubmit={authenticate}>
-            <label>Email<input name="email" type="email" autoComplete="email" required maxLength={180} defaultValue={email} placeholder="you@example.com" /></label>
-            <label>Password<input name="password" type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} minLength={10} maxLength={128} required placeholder="10+ characters, letter + number" /></label>
-            {mode === 'register' && <label>Confirm password<input name="confirmPassword" type="password" autoComplete="new-password" minLength={10} maxLength={128} required placeholder="Repeat your password" /></label>}
-            <button className="primary" type="submit" disabled={busy}>{busy ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Create account'}</button>
-          </form>}
+        {(mode === 'login' || mode === 'register') && <form onSubmit={authenticate}>
+          <label>Email<input name="email" type="email" autoComplete="email" required maxLength={180} defaultValue={email} placeholder="you@example.com" /></label>
+          <label>Password<input name="password" type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} minLength={8} maxLength={128} required placeholder="Your password" /></label>
+          {mode === 'register' && <label>Confirm password<input name="confirmPassword" type="password" autoComplete="new-password" minLength={8} maxLength={128} required placeholder="Repeat your password" /></label>}
+          <button className="primary" type="submit" disabled={busy}>{busy ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Create account'}</button>
+        </form>}
 
-          {mode === 'forgot' && <form onSubmit={forgotPassword}>
-            <label>Email<input name="email" type="email" autoComplete="email" required maxLength={180} defaultValue={email} placeholder="you@example.com" /></label>
-            <button className="primary" type="submit" disabled={busy}>{busy ? 'Sending…' : 'Send reset link'}</button>
-          </form>}
+        {mode === 'forgot' && <form onSubmit={forgotPassword}>
+          <label>Email<input name="email" type="email" autoComplete="email" required maxLength={180} defaultValue={email} placeholder="you@example.com" /></label>
+          <button className="primary" type="submit" disabled={busy}>{busy ? 'Sending…' : 'Send reset email'}</button>
+        </form>}
 
-          {mode === 'reset' && <form onSubmit={resetPassword}>
-            <label>New password<input name="password" type="password" autoComplete="new-password" minLength={10} maxLength={128} required placeholder="10+ characters, letter + number" /></label>
-            <label>Confirm new password<input name="confirmPassword" type="password" autoComplete="new-password" minLength={10} maxLength={128} required placeholder="Repeat your password" /></label>
-            <button className="primary" type="submit" disabled={busy}>{busy ? 'Updating…' : 'Update password'}</button>
-          </form>}
+        {mode === 'check-email' && <div className="auth-actions">
+          <button className="primary" type="button" disabled={busy} onClick={checkVerification}>{busy ? 'Checking…' : 'I verified my email — continue'}</button>
+          <button className="secondary" type="button" disabled={busy} onClick={resendVerification}>Resend verification email</button>
+          <button className="text-button compact-link" type="button" onClick={() => switchMode('login')}>Back to sign in</button>
+        </div>}
 
-          {mode === 'check-email' && <div className="auth-actions">
-            <button className="primary" type="button" disabled={busy || !email} onClick={resendVerification}>{busy ? 'Sending…' : 'Resend verification email'}</button>
-            <button className="secondary" type="button" onClick={() => switchMode('login')}>Back to sign in</button>
-          </div>}
-
-          {mode === 'login' && <>
-            <button className="text-button" type="button" onClick={() => switchMode('forgot')}>Forgot your password?</button>
-            <button className="text-button compact-link" type="button" onClick={() => switchMode('register')}>Need an account? Register</button>
-          </>}
-          {mode === 'register' && <button className="text-button" type="button" onClick={() => switchMode('login')}>Already registered? Sign in</button>}
-          {mode === 'forgot' && <button className="text-button" type="button" onClick={() => switchMode('login')}>Back to sign in</button>}
+        {mode === 'login' && <>
+          <button className="text-button" type="button" onClick={() => switchMode('forgot')}>Forgot your password?</button>
+          <button className="text-button compact-link" type="button" onClick={() => switchMode('register')}>Need an account? Register</button>
         </>}
+        {mode === 'register' && <button className="text-button" type="button" onClick={() => switchMode('login')}>Already registered? Sign in</button>}
+        {mode === 'forgot' && <button className="text-button" type="button" onClick={() => switchMode('login')}>Back to sign in</button>}
       </div>
     </section>
   </main>

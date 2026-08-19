@@ -4,45 +4,45 @@ Ledgerly v1.0 is designed as a deployable personal-finance application rather th
 
 ## Account security
 
-- New production accounts require email verification before financial data can be accessed.
-- Verification links are signed, time-limited, and one-time-use.
-- Verification can be resent without revealing account state through the public response.
-- Password reset requests do not reveal whether an email address is registered.
-- Password reset links are signed, time-limited, and one-time-use.
-- Password changes and resets increment an account auth version, revoking previously issued access tokens.
-- Existing accounts created before email verification shipped are grandfathered as verified during the schema upgrade.
-- Passwords must be 10–128 characters and contain at least one letter and one number.
-- Authentication endpoints are rate limited by client IP.
+- Firebase Authentication is the identity provider for registration, login, verification, password recovery, and password changes.
+- New accounts must verify their Firebase email before financial data can be accessed when `FIREBASE_REQUIRE_VERIFIED_EMAIL=true`.
+- The browser sends Firebase ID tokens to the Flask API over HTTPS.
+- Flask verifies token authenticity, expiry, revocation state, project ownership, and verified-email status with the Firebase Admin SDK.
+- The Firebase UID is mapped to exactly one internal Ledgerly user record used for finance ownership.
+- Existing pre-Firebase Ledgerly accounts can be linked by the same verified email, preserving existing finance history.
+- Password changes and account deletion use Firebase reauthentication so sensitive actions require a recent login.
+- Password reset email is sent by Firebase and does not require Ledgerly to operate its own SMTP or transactional-email service.
 - API responses use restrictive security headers and financial JSON responses are not cached.
 
-## Transactional email
+## Identity infrastructure
 
-Ledgerly supports two delivery paths:
+Production requires one Firebase project with:
 
-1. **Resend HTTPS API** — preferred when a verified sending domain is available.
-2. **Authenticated SMTP fallback** — useful for a dedicated Gmail or other SMTP mailbox while a custom domain is not yet available.
+- a registered Firebase Web app
+- Email/Password Authentication enabled
+- the Ledgerly frontend host listed in Authorized domains
+- a Firebase Admin service account available only to the Flask backend
 
-Core environment variables:
+Frontend environment values:
 
-- `EMAIL_FROM`
-- `PUBLIC_APP_URL`
-- `EMAIL_VERIFICATION_REQUIRED=true`
+```text
+VITE_FIREBASE_API_KEY
+VITE_FIREBASE_AUTH_DOMAIN
+VITE_FIREBASE_PROJECT_ID
+VITE_FIREBASE_APP_ID
+```
 
-Resend:
+Backend environment values:
 
-- `RESEND_API_KEY`
+```text
+FIREBASE_PROJECT_ID
+FIREBASE_SERVICE_ACCOUNT_JSON
+FIREBASE_REQUIRE_VERIFIED_EMAIL=true
+```
 
-SMTP fallback:
+The Firebase Web configuration is browser configuration, not a private server credential. `FIREBASE_SERVICE_ACCOUNT_JSON` is privileged and must remain backend-only.
 
-- `SMTP_HOST`
-- `SMTP_PORT`
-- `SMTP_USERNAME`
-- `SMTP_PASSWORD`
-- `SMTP_USE_SSL`
-
-If both are configured, Ledgerly tries Resend first and falls back to SMTP when Resend cannot deliver. Production must have at least one delivery method capable of reaching arbitrary customer inboxes before email verification is enforced publicly.
-
-For Gmail SMTP, use a dedicated mailbox, 2-Step Verification, and an app password rather than the normal Google-account password. Do not reuse a personal primary mailbox for a long-term public product.
+See [`FIREBASE_SETUP.md`](FIREBASE_SETUP.md) for the exact deployment process.
 
 ## Appearance
 
@@ -60,14 +60,18 @@ For Gmail SMTP, use a dedicated mailbox, 2-Step Verification, and an app passwor
 
 ## Production QA checklist
 
-1. Register with a real inbox and verify the email.
-2. Confirm unverified login is blocked.
-3. Resend verification and confirm the newest link works.
-4. Request a password reset, use it once, and confirm reuse fails.
-5. Confirm an already-issued session is rejected after password reset/change.
-6. Seed demo data, create/edit/delete a transaction, and refresh to confirm PostgreSQL persistence.
-7. Exercise budgets, goals, CSV import/export, clear-data, and account deletion.
-8. Verify Midnight, Emerald, Violet, Amber, and Light themes persist across refreshes.
-9. Verify layout at 320px, 360px, 390px, 430px, tablet, and desktop widths.
-10. Verify production CORS only allows the intended Ledgerly frontend origin.
-11. Rotate any database or email credentials exposed during deployment setup.
+1. Register with a real inbox through Firebase Authentication.
+2. Confirm the account cannot access Ledgerly finance data until the email is verified.
+3. Verify the email and confirm the Ledgerly dashboard loads.
+4. Request a password reset and confirm Firebase's reset email arrives.
+5. Change the password from Ledgerly Settings and confirm the old password no longer authenticates.
+6. Sign out, refresh, and confirm protected finance data remains inaccessible.
+7. Sign in again and confirm finance history persists.
+8. Seed demo data, create/edit/delete a transaction, and refresh to confirm PostgreSQL persistence.
+9. Exercise budgets, goals, CSV import/export, clear-data, and account deletion.
+10. Verify Midnight, Emerald, Violet, Amber, and Light themes persist across refreshes.
+11. Verify layout at 320px, 360px, 390px, 430px, tablet, and desktop widths.
+12. Verify production CORS only allows the intended Ledgerly frontend origin.
+13. Verify a second Firebase account cannot access the first user's transactions, budgets, or goals.
+14. Delete a disposable account and confirm the Ledgerly data and Firebase user are both removed.
+15. Rotate any database or Firebase service-account credential accidentally exposed during deployment setup.

@@ -1,21 +1,16 @@
-def register(client, email, password="password123"):
-    response = client.post("/api/auth/register", json={"email": email, "password": password})
-    assert response.status_code == 201
-    return {"Authorization": f"Bearer {response.get_json()['accessToken']}"}
+def firebase_headers(email, uid):
+    return {"Authorization": f"Bearer test-firebase:{uid}:{email}"}
 
 
-def test_account_summary_and_password_change(client, auth_headers):
+def test_account_summary_and_password_management_boundary(client, auth_headers):
     account = client.get("/api/account", headers=auth_headers)
     assert account.status_code == 200
     assert account.get_json()["email"] == "demo@example.com"
+    assert account.get_json()["emailVerified"] is True
 
-    bad = client.patch("/api/account/password", headers=auth_headers, json={"currentPassword": "wrong", "newPassword": "newpassword123"})
-    assert bad.status_code == 403
-
-    changed = client.patch("/api/account/password", headers=auth_headers, json={"currentPassword": "password123", "newPassword": "newpassword123"})
-    assert changed.status_code == 200
-    assert client.post("/api/auth/login", json={"email": "demo@example.com", "password": "password123"}).status_code == 401
-    assert client.post("/api/auth/login", json={"email": "demo@example.com", "password": "newpassword123"}).status_code == 200
+    password = client.patch("/api/account/password", headers=auth_headers, json={"currentPassword": "anything", "newPassword": "anythingelse123"})
+    assert password.status_code == 410
+    assert "Firebase" in password.get_json()["error"]
 
 
 def test_transaction_import_is_atomic(client, auth_headers):
@@ -39,8 +34,8 @@ def test_transaction_import_is_atomic(client, auth_headers):
 
 
 def test_user_data_isolation(client):
-    first = register(client, "first@example.com")
-    second = register(client, "second@example.com")
+    first = firebase_headers("first@example.com", "first-uid")
+    second = firebase_headers("second@example.com", "second-uid")
     created = client.post("/api/transactions", headers=first, json={"description": "Private", "amount": -25, "category": "Other", "date": "2026-08-18"})
     tx_id = created.get_json()["id"]
 
@@ -68,9 +63,8 @@ def test_demo_reset_and_clear_data(client, auth_headers):
     assert dashboard["goals"] == []
 
 
-def test_delete_account_requires_password(client, auth_headers):
-    denied = client.delete("/api/account", headers=auth_headers, json={"password": "wrong"})
-    assert denied.status_code == 403
-    deleted = client.delete("/api/account", headers=auth_headers, json={"password": "password123"})
+def test_delete_account_removes_ledgerly_data(client, auth_headers):
+    client.post("/api/transactions", headers=auth_headers, json={"description": "Private", "amount": -25, "category": "Other", "date": "2026-08-18"})
+    deleted = client.delete("/api/account", headers=auth_headers)
     assert deleted.status_code == 200
-    assert client.post("/api/auth/login", json={"email": "demo@example.com", "password": "password123"}).status_code == 401
+    assert deleted.get_json()["deleted"] is True
