@@ -1,5 +1,8 @@
 import json
 import logging
+import smtplib
+import ssl
+from email.message import EmailMessage
 from urllib import error, request as urlrequest
 
 from flask import current_app
@@ -8,14 +11,20 @@ logger = logging.getLogger(__name__)
 
 
 def email_delivery_configured():
-    return bool(current_app.config.get("RESEND_API_KEY") and current_app.config.get("EMAIL_FROM"))
+    resend_ready = bool(current_app.config.get("RESEND_API_KEY") and current_app.config.get("EMAIL_FROM"))
+    smtp_ready = bool(
+        current_app.config.get("SMTP_HOST")
+        and current_app.config.get("SMTP_USERNAME")
+        and current_app.config.get("SMTP_PASSWORD")
+        and current_app.config.get("EMAIL_FROM")
+    )
+    return resend_ready or smtp_ready
 
 
-def _send(to_email, subject, html, text):
+def _send_resend(to_email, subject, html, text):
     api_key = current_app.config.get("RESEND_API_KEY", "")
     sender = current_app.config.get("EMAIL_FROM", "")
     if not api_key or not sender:
-        logger.warning("Transactional email is not configured; skipped email to %s", to_email)
         return False
 
     payload = json.dumps({
@@ -39,8 +48,53 @@ def _send(to_email, subject, html, text):
         with urlrequest.urlopen(req, timeout=10) as response:
             return 200 <= response.status < 300
     except (error.HTTPError, error.URLError, TimeoutError) as exc:
-        logger.exception("Unable to send Ledgerly transactional email: %s", exc)
+        logger.warning("Resend delivery failed; trying configured SMTP fallback: %s", exc)
         return False
+
+
+def _send_smtp(to_email, subject, html, text):
+    host = current_app.config.get("SMTP_HOST", "")
+    port = int(current_app.config.get("SMTP_PORT", 465))
+    username = current_app.config.get("SMTP_USERNAME", "")
+    password = current_app.config.get("SMTP_PASSWORD", "")
+    sender = current_app.config.get("EMAIL_FROM", "")
+    use_ssl = bool(current_app.config.get("SMTP_USE_SSL", True))
+    if not host or not username or not password or not sender:
+        return False
+
+    message = EmailMessage()
+    message["Subject"] = subject
+    message["From"] = sender
+    message["To"] = to_email
+    message.set_content(text)
+    message.add_alternative(html, subtype="html")
+
+    try:
+        context = ssl.create_default_context()
+        if use_ssl:
+            with smtplib.SMTP_SSL(host, port, context=context, timeout=12) as server:
+                server.login(username, password)
+                server.send_message(message)
+        else:
+            with smtplib.SMTP(host, port, timeout=12) as server:
+                server.ehlo()
+                server.starttls(context=context)
+                server.ehlo()
+                server.login(username, password)
+                server.send_message(message)
+        return True
+    except (smtplib.SMTPException, OSError, TimeoutError) as exc:
+        logger.exception("SMTP delivery failed: %s", exc)
+        return False
+
+
+def _send(to_email, subject, html, text):
+    if _send_resend(to_email, subject, html, text):
+        return True
+    if _send_smtp(to_email, subject, html, text):
+        return True
+    logger.warning("Transactional email could not be delivered to %s", to_email)
+    return False
 
 
 def email_shell(title, body, action_label, action_url, footer):
