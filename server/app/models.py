@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from werkzeug.security import check_password_hash, generate_password_hash
 from .extensions import db
 
@@ -7,7 +7,7 @@ class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     email = db.Column(db.String(180), unique=True, nullable=False, index=True)
     password_hash = db.Column(db.String(255), nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    created_at = db.Column(db.DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
