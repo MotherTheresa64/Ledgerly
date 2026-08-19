@@ -26,6 +26,11 @@ def _key(path, client_ip):
 
 
 def install_auth_rate_limits(blueprint):
+    # Blueprints can be registered on many app instances during tests. Install this hook once.
+    if getattr(blueprint, "_ledgerly_rate_limits_installed", False):
+        return
+    blueprint._ledgerly_rate_limits_installed = True
+
     @blueprint.before_request
     def enforce_auth_rate_limit():
         policy = AUTH_LIMITS.get(request.path)
