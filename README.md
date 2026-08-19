@@ -5,17 +5,13 @@ Ledgerly is a production-minded full-stack personal-finance application for trac
 ## Consumer-ready v1 feature set
 
 ### Authentication and account lifecycle
-- User registration with verified-email activation
-- Resend verification flow with expiring, one-time verification links
-- Resend-verification action for accounts that have not activated yet
-- Non-enumerating forgot-password flow
-- Expiring, one-time password-reset links
-- Strong password policy and Werkzeug password hashing
-- Signed JWT access tokens with configurable expiry
-- Session revocation after password changes/resets through per-user auth versioning
-- Account profile summary and verification status
-- Password-confirmed permanent account deletion
-- Per-IP authentication rate limiting
+- Firebase Authentication for email/password registration and login
+- Firebase-managed email verification and password recovery
+- Firebase password policy and account security controls
+- Firebase ID tokens verified by the Flask API before protected finance data is accessed
+- Automatic Firebase UID mapping to Ledgerly's PostgreSQL user records
+- Safe migration path for pre-Firebase Ledgerly accounts by verified email
+- Firebase reauthentication before password changes and permanent account deletion
 - Strict user ownership checks on every protected finance resource
 
 ### Financial overview
@@ -58,23 +54,48 @@ Ledgerly is a production-minded full-stack personal-finance application for trac
 - Midnight, Emerald, Violet, Amber, and Light themes
 - Semantic income/expense colors remain distinct from the chosen accent theme
 - Keyboard-visible focus states and semantic form labels
-- Loading, empty, error, success, over-budget, completed-goal, and expired-session states
+- Loading, empty, error, success, over-budget, and completed-goal states
 
 ### Data controls
 - Export transaction history to CSV
 - Import transaction history from CSV
 - Clear all finance data without deleting the account
 - Replace current data with a fresh demo dataset
-- Permanently delete the account and all associated data
+- Permanently delete the Ledgerly account data and Firebase user
 
 ## Tech stack
 
-**Frontend:** React 18, TypeScript, Vite, CSS  
-**Backend:** Python, Flask, Flask-SQLAlchemy, Flask-JWT-Extended  
+**Frontend:** React 18, TypeScript, Vite, Firebase Web SDK, CSS  
+**Backend:** Python, Flask, Flask-SQLAlchemy, Firebase Admin SDK  
 **Database:** PostgreSQL in production / SQLite locally  
-**Transactional email:** Resend  
+**Identity:** Firebase Authentication  
 **Testing:** pytest  
 **DevOps:** GitHub Actions, Dependabot, Render
+
+## Authentication architecture
+
+```text
+Browser
+  │
+  ├── Firebase Authentication
+  │     ├── registration / login
+  │     ├── email verification
+  │     └── password reset
+  │
+  └── Firebase ID token
+          │
+          ▼
+      Flask API on Render
+          │ verifies token with Firebase Admin
+          │ maps Firebase UID → Ledgerly user
+          ▼
+      PostgreSQL
+          ├── transactions
+          ├── budgets
+          └── goals
+```
+
+Firebase owns credentials. Ledgerly never receives or stores a user's login password on the server. PostgreSQL remains the source of truth for financial data.
 
 ## Repository structure
 
@@ -84,6 +105,7 @@ Ledgerly/
 │   └── src/
 │       ├── App.tsx
 │       ├── AuthScreen.tsx
+│       ├── firebase.ts
 │       ├── ThemeSwitcher.tsx
 │       ├── api.ts
 │       ├── styles.css
@@ -92,15 +114,15 @@ Ledgerly/
 │       └── types.ts
 ├── server/
 │   ├── app/
+│   │   ├── firebase_auth.py
 │   │   ├── models.py
 │   │   ├── routes.py
-│   │   ├── email_service.py
-│   │   ├── rate_limit.py
 │   │   └── config.py
 │   └── tests/
 ├── docs/
 │   ├── ARCHITECTURE.md
-│   └── CONSUMER_READINESS.md
+│   ├── CONSUMER_READINESS.md
+│   └── FIREBASE_SETUP.md
 ├── SECURITY.md
 ├── render.yaml
 └── .github/workflows/ci.yml
@@ -108,7 +130,11 @@ Ledgerly/
 
 ## Local development
 
-### Backend
+### 1. Firebase
+
+Create a Firebase project, register a Web app, enable Email/Password Authentication, and download a service-account key for local backend development. See [`docs/FIREBASE_SETUP.md`](docs/FIREBASE_SETUP.md).
+
+### 2. Backend
 
 ```bash
 cd server
@@ -133,7 +159,7 @@ python run.py
 
 The API runs at `http://localhost:5000`, with health at `http://localhost:5000/api/health`.
 
-### Frontend
+### 3. Frontend
 
 ```bash
 cd client
@@ -143,29 +169,30 @@ npm run dev
 
 The frontend runs at `http://localhost:5173` and defaults to `http://localhost:5000/api` locally.
 
-## Production environment
+## Environment variables
 
 Server:
 
 ```text
 SECRET_KEY=<long random value>
-JWT_SECRET_KEY=<different long random value>
-JWT_ACCESS_TOKEN_HOURS=12
-DATABASE_URL=<PostgreSQL URL>
+DATABASE_URL=<PostgreSQL URL in production>
 CLIENT_ORIGIN=<frontend origin>
-PUBLIC_APP_URL=<frontend origin>
-RESEND_API_KEY=<Resend API key>
-EMAIL_FROM=Ledgerly <no-reply@verified-sending-domain>
-EMAIL_VERIFICATION_REQUIRED=true
+FIREBASE_PROJECT_ID=<Firebase project id>
+FIREBASE_SERVICE_ACCOUNT_JSON=<single-line service-account JSON>
+FIREBASE_REQUIRE_VERIFIED_EMAIL=true
 ```
 
 Client:
 
 ```text
 VITE_API_URL=<API origin>/api
+VITE_FIREBASE_API_KEY=<Firebase Web API key>
+VITE_FIREBASE_AUTH_DOMAIN=<project>.firebaseapp.com
+VITE_FIREBASE_PROJECT_ID=<Firebase project id>
+VITE_FIREBASE_APP_ID=<Firebase web app id>
 ```
 
-`RESEND_API_KEY` and all other production secrets belong only in the deployment environment. Sending verification/recovery mail to arbitrary public users requires a verified sending domain at the transactional-email provider.
+The Firebase Web configuration is expected to be present in the browser application. The service-account JSON is privileged and belongs only in the backend deployment environment.
 
 ## Quality gates
 
@@ -186,7 +213,7 @@ npm run typecheck
 npm run build
 ```
 
-GitHub Actions runs the same checks on pull requests. Backend tests cover both Python 3.12 and Python 3.14.
+GitHub Actions runs the same checks on pull requests. Backend tests cover Python 3.12 and Python 3.14.
 
 ## CSV format
 
@@ -200,15 +227,10 @@ Imported amounts use the signed storage representation: positive numbers are inc
 
 ## API overview
 
+Authentication endpoints are provided by Firebase rather than Flask. Ledgerly's backend exposes only the finance/account-data API:
+
 ```text
-POST   /api/auth/register
-POST   /api/auth/login
-POST   /api/auth/verify-email
-POST   /api/auth/resend-verification
-POST   /api/auth/forgot-password
-POST   /api/auth/reset-password
 GET    /api/account
-PATCH  /api/account/password
 DELETE /api/account
 GET    /api/dashboard
 GET    /api/transactions
@@ -231,14 +253,14 @@ POST   /api/demo/reset
 GET    /api/health
 ```
 
-See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/CONSUMER_READINESS.md`](docs/CONSUMER_READINESS.md), and [`SECURITY.md`](SECURITY.md) for implementation and deployment details.
+Every protected request sends the current Firebase ID token in `Authorization: Bearer <token>`. The Flask API verifies that token and resolves it to the corresponding Ledgerly user before querying finance data.
+
+See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/CONSUMER_READINESS.md`](docs/CONSUMER_READINESS.md), [`docs/FIREBASE_SETUP.md`](docs/FIREBASE_SETUP.md), and [`SECURITY.md`](SECURITY.md) for implementation and deployment details.
 
 ## Deployment
 
-`render.yaml` defines the Render deployment: PostgreSQL, the Flask/Gunicorn API, and the React static site. Configure the synced deployment variables above, then allow Render to rebuild from `main`.
+`render.yaml` defines PostgreSQL, the Flask/Gunicorn API, and the React static site. Firebase Authentication remains an external managed identity service. Configure the Firebase environment values in Render, add the deployed Ledgerly frontend to Firebase's authorized domains, and allow Render to rebuild from `main`.
 
 ## Status
 
-Ledgerly's application code covers the intended consumer v1 scope: verified account lifecycle, password recovery, user-scoped finance CRUD, analytics, budgets, goals, data portability, destructive-data controls, responsive UI, persistent themes, automated security regression tests, CI, and deployment configuration.
-
-A public production instance must additionally provide a verified transactional-email sender domain so verification and password-recovery messages can be delivered to arbitrary users. This is deployment infrastructure rather than an application-code gap.
+Ledgerly's application code covers the intended consumer v1 scope: managed authentication, email verification, password recovery, user-scoped finance CRUD, analytics, budgets, goals, data portability, destructive-data controls, responsive UI, persistent themes, automated regression tests, CI, and production deployment configuration.
