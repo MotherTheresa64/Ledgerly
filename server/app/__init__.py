@@ -1,12 +1,14 @@
 import os
 
-from flask import Flask
+from flask import Flask, jsonify
 from flask_cors import CORS
 from sqlalchemy import inspect, text
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from .config import Config
 from .extensions import db, jwt
 from .models import User
+from .rate_limit import install_auth_rate_limits
 from .routes import api
 
 
@@ -41,6 +43,10 @@ def create_app(test_config=None):
     if test_config:
         app.config.update(test_config)
 
+    # Render terminates TLS in front of Gunicorn. Trust exactly one proxy hop for the real client IP/protocol.
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+    app.config.setdefault("MAX_CONTENT_LENGTH", 2 * 1024 * 1024)
+
     db.init_app(app)
     jwt.init_app(app)
     CORS(
@@ -48,7 +54,22 @@ def create_app(test_config=None):
         resources={r"/api/*": {"origins": os.getenv("CLIENT_ORIGIN", "http://localhost:5173")}},
         supports_credentials=False,
     )
+    install_auth_rate_limits(api)
     app.register_blueprint(api)
+
+    @app.after_request
+    def secure_api_response(response):
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "no-referrer")
+        response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+        if request_path_is_api(response):
+            response.headers.setdefault("Cache-Control", "no-store")
+        return response
+
+    @app.errorhandler(413)
+    def payload_too_large(_error):
+        return jsonify({"error": "Request body is too large."}), 413
 
     @jwt.token_in_blocklist_loader
     def token_is_revoked(_jwt_header, jwt_payload):
@@ -69,3 +90,9 @@ def create_app(test_config=None):
         ensure_auth_schema()
 
     return app
+
+
+def request_path_is_api(response):
+    # CORS and the application itself only expose API responses from this service.
+    # Checking for the JSON mimetype avoids attaching cache policy to Gunicorn/Render error pages.
+    return response.mimetype == "application/json"
