@@ -29,6 +29,14 @@ export type MonthlyTrend = {
   net: number
 }
 
+export type Account = {
+  email: string
+  createdAt: string | null
+  transactionCount: number
+  budgetCount: number
+  goalCount: number
+}
+
 export type Dashboard = {
   totalBalance: number
   income: number
