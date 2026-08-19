@@ -20,7 +20,7 @@ def test_firebase_identity_is_created_on_first_api_request(client, app):
 def test_existing_ledgerly_email_links_to_verified_firebase_identity(client, app):
     with app.app_context():
         legacy = User(email="legacy@example.com")
-        legacy.set_password("legacy-password-123")
+        legacy.set_legacy_placeholder("legacy-password-123")
         db.session.add(legacy)
         db.session.commit()
         db.session.add(Transaction(user_id=legacy.id, description="Existing data", amount=-12, category="Other"))
