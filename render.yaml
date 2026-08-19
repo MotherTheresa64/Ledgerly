@@ -19,6 +19,14 @@ services:
         value: "12"
       - key: CLIENT_ORIGIN
         sync: false
+      - key: PUBLIC_APP_URL
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+      - key: EMAIL_VERIFICATION_REQUIRED
+        value: "true"
 
   - type: web
     name: ledgerly-web
