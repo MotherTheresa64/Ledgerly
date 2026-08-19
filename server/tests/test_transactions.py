@@ -61,6 +61,43 @@ def test_rejects_oversized_import_amount(client, auth_headers):
     assert "999,999,999.99" in response.get_json()["error"]
 
 
+def test_rejects_oversized_transaction_description(client, auth_headers):
+    response = client.post("/api/transactions", headers=auth_headers, json={
+        "description": "x" * 81,
+        "amount": -12.34,
+        "category": "Shopping",
+        "date": date.today().isoformat(),
+    })
+    assert response.status_code == 400
+    assert "80 characters" in response.get_json()["error"]
+
+
+def test_rejects_oversized_transaction_notes(client, auth_headers):
+    response = client.post("/api/transactions", headers=auth_headers, json={
+        "description": "Normal purchase",
+        "amount": -12.34,
+        "category": "Shopping",
+        "date": date.today().isoformat(),
+        "notes": "n" * 501,
+    })
+    assert response.status_code == 400
+    assert "500 characters" in response.get_json()["error"]
+
+
+def test_rejects_oversized_import_text(client, auth_headers):
+    response = client.post("/api/transactions/import", headers=auth_headers, json={
+        "transactions": [{
+            "description": "x" * 81,
+            "amount": -5,
+            "category": "Other",
+            "date": date.today().isoformat(),
+            "notes": "valid",
+        }]
+    })
+    assert response.status_code == 400
+    assert "80 characters" in response.get_json()["error"]
+
+
 def test_demo_seed(client, auth_headers):
     response = client.post("/api/demo/seed", headers=auth_headers)
     assert response.status_code == 201

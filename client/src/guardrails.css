@@ -22,3 +22,11 @@
   overflow-wrap: anywhere;
   word-break: break-word;
 }
+
+.field-counter {
+  display: block;
+  margin-top: 0.35rem;
+  text-align: right;
+  opacity: 0.72;
+  font-size: 0.75rem;
+}
