@@ -1,12 +1,16 @@
+from datetime import date
+
+
 def test_transaction_crud_updates_dashboard(client, auth_headers):
+    today = date.today().isoformat()
     create = client.post("/api/transactions", headers=auth_headers, json={
-        "description": "Paycheck", "amount": 2000, "category": "Income", "date": "2026-08-18", "notes": "August pay"
+        "description": "Paycheck", "amount": 2000, "category": "Income", "date": today, "notes": "Current pay"
     })
     assert create.status_code == 201
     transaction_id = create.get_json()["id"]
 
     expense = client.post("/api/transactions", headers=auth_headers, json={
-        "description": "Groceries", "amount": -150, "category": "Food & Dining", "date": "2026-08-18"
+        "description": "Groceries", "amount": -150, "category": "Food & Dining", "date": today
     })
     assert expense.status_code == 201
 
@@ -17,7 +21,7 @@ def test_transaction_crud_updates_dashboard(client, auth_headers):
     assert len(dashboard["monthlyTrend"]) == 6
 
     updated = client.patch(f"/api/transactions/{transaction_id}", headers=auth_headers, json={
-        "description": "Primary paycheck", "amount": 2100, "category": "Income", "date": "2026-08-18", "notes": "Adjusted"
+        "description": "Primary paycheck", "amount": 2100, "category": "Income", "date": today, "notes": "Adjusted"
     })
     assert updated.status_code == 200
     assert updated.get_json()["description"] == "Primary paycheck"
