@@ -5,6 +5,7 @@ import {
   sendEmailVerification,
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
+  signOut,
 } from 'firebase/auth'
 import type { AuthSuccess } from './api'
 import { firebaseAuth } from './firebase'
@@ -41,7 +42,11 @@ function AuthScreen({ onAuthenticated, initialMessage = '' }: Props) {
         setEmail(user.email || '')
         setMode('check-email')
         setMessage('Verify your email address, then continue into Ledgerly.')
+        return
       }
+      // App.tsx clears Ledgerly's session marker when the user signs out. If Firebase
+      // still has a verified persisted session, close it here so sign-out is complete.
+      await signOut(firebaseAuth)
     })
   }, [])
 
