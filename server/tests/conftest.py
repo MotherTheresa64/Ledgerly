@@ -5,7 +5,11 @@ from app.extensions import db
 
 @pytest.fixture()
 def app():
-    app = create_app({"TESTING": True, "SQLALCHEMY_DATABASE_URI": "sqlite://", "JWT_SECRET_KEY": "test-secret"})
+    app = create_app({
+        "TESTING": True,
+        "SQLALCHEMY_DATABASE_URI": "sqlite://",
+        "JWT_SECRET_KEY": "ledgerly-test-secret-key-32-bytes-minimum",
+    })
     with app.app_context():
         db.create_all()
         yield app
