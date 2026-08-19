@@ -45,7 +45,8 @@ def create_app(test_config=None):
 
     # Render terminates TLS in front of Gunicorn. Trust exactly one proxy hop for the real client IP/protocol.
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
-    app.config.setdefault("MAX_CONTENT_LENGTH", 2 * 1024 * 1024)
+    if app.config.get("MAX_CONTENT_LENGTH") is None:
+        app.config["MAX_CONTENT_LENGTH"] = 2 * 1024 * 1024
 
     db.init_app(app)
     jwt.init_app(app)
@@ -63,7 +64,7 @@ def create_app(test_config=None):
         response.headers.setdefault("X-Frame-Options", "DENY")
         response.headers.setdefault("Referrer-Policy", "no-referrer")
         response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
-        if request_path_is_api(response):
+        if response.mimetype == "application/json":
             response.headers.setdefault("Cache-Control", "no-store")
         return response
 
@@ -90,9 +91,3 @@ def create_app(test_config=None):
         ensure_auth_schema()
 
     return app
-
-
-def request_path_is_api(response):
-    # CORS and the application itself only expose API responses from this service.
-    # Checking for the JSON mimetype avoids attaching cache policy to Gunicorn/Render error pages.
-    return response.mimetype == "application/json"
