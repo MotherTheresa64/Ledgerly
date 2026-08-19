@@ -12,6 +12,8 @@ from .routes import api
 
 MAX_MONEY = 999_999_999.99
 MONEY_FIELDS = {"amount", "limit", "target", "saved"}
+MAX_TRANSACTION_DESCRIPTION = 80
+MAX_TRANSACTION_NOTES = 500
 
 
 def ensure_auth_schema():
@@ -61,6 +63,25 @@ def oversized_money_value(payload):
     return None
 
 
+def oversized_transaction_text(payload):
+    """Return a validation message when transaction text exceeds UI-safe limits."""
+    if isinstance(payload, dict):
+        if "description" in payload and len(str(payload.get("description") or "").strip()) > MAX_TRANSACTION_DESCRIPTION:
+            return f"Description cannot exceed {MAX_TRANSACTION_DESCRIPTION} characters."
+        if "notes" in payload and len(str(payload.get("notes") or "").strip()) > MAX_TRANSACTION_NOTES:
+            return f"Notes cannot exceed {MAX_TRANSACTION_NOTES} characters."
+        for value in payload.values():
+            nested = oversized_transaction_text(value)
+            if nested:
+                return nested
+    elif isinstance(payload, list):
+        for item in payload:
+            nested = oversized_transaction_text(item)
+            if nested:
+                return nested
+    return None
+
+
 def create_app(test_config=None):
     app = Flask(__name__)
     app.config.from_object(Config)
@@ -92,6 +113,10 @@ def create_app(test_config=None):
                 return jsonify({
                     "error": f"{oversized_field.capitalize()} cannot exceed $999,999,999.99."
                 }), 400
+            if request.path.startswith("/api/transactions"):
+                text_error = oversized_transaction_text(payload)
+                if text_error:
+                    return jsonify({"error": text_error}), 400
         return None
 
     @app.after_request
