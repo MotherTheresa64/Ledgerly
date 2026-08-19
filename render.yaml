@@ -15,27 +15,13 @@ services:
         generateValue: true
       - key: JWT_SECRET_KEY
         generateValue: true
-      - key: JWT_ACCESS_TOKEN_HOURS
-        value: "12"
       - key: CLIENT_ORIGIN
         sync: false
-      - key: PUBLIC_APP_URL
+      - key: FIREBASE_PROJECT_ID
         sync: false
-      - key: RESEND_API_KEY
+      - key: FIREBASE_SERVICE_ACCOUNT_JSON
         sync: false
-      - key: EMAIL_FROM
-        sync: false
-      - key: SMTP_HOST
-        sync: false
-      - key: SMTP_PORT
-        value: "465"
-      - key: SMTP_USERNAME
-        sync: false
-      - key: SMTP_PASSWORD
-        sync: false
-      - key: SMTP_USE_SSL
-        value: "true"
-      - key: EMAIL_VERIFICATION_REQUIRED
+      - key: FIREBASE_REQUIRE_VERIFIED_EMAIL
         value: "true"
 
   - type: web
@@ -46,6 +32,14 @@ services:
     staticPublishPath: ./dist
     envVars:
       - key: VITE_API_URL
+        sync: false
+      - key: VITE_FIREBASE_API_KEY
+        sync: false
+      - key: VITE_FIREBASE_AUTH_DOMAIN
+        sync: false
+      - key: VITE_FIREBASE_PROJECT_ID
+        sync: false
+      - key: VITE_FIREBASE_APP_ID
         sync: false
     routes:
       - type: rewrite
