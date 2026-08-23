@@ -45,6 +45,53 @@ def test_user_data_isolation(client):
     assert client.patch(f"/api/transactions/{tx_id}", headers=second, json={"description": "Hack", "amount": -1, "category": "Other", "date": "2026-08-18"}).status_code == 404
 
 
+def test_all_financial_resources_are_isolated_between_users(client):
+    first = firebase_headers("owner@example.com", "owner-uid")
+    second = firebase_headers("other@example.com", "other-uid")
+
+    tx = client.post("/api/transactions", headers=first, json={
+        "description": "Private purchase", "amount": -42, "category": "Other", "date": "2026-08-18"
+    }).get_json()
+    budget = client.post("/api/budgets", headers=first, json={"category": "Other", "limit": 200}).get_json()
+    goal = client.post("/api/goals", headers=first, json={"name": "Private goal", "target": 1000, "saved": 100}).get_json()
+
+    other_dashboard = client.get("/api/dashboard", headers=second).get_json()
+    assert other_dashboard["transactions"] == []
+    assert other_dashboard["budgets"] == []
+    assert other_dashboard["goals"] == []
+
+    assert client.delete(f"/api/transactions/{tx['id']}", headers=second).status_code == 404
+    assert client.patch(f"/api/budgets/{budget['id']}", headers=second, json={"limit": 1}).status_code == 404
+    assert client.delete(f"/api/budgets/{budget['id']}", headers=second).status_code == 404
+    assert client.patch(f"/api/goals/{goal['id']}", headers=second, json={"name": "stolen"}).status_code == 404
+    assert client.post(f"/api/goals/{goal['id']}/contribute", headers=second, json={"amount": 1}).status_code == 404
+    assert client.delete(f"/api/goals/{goal['id']}", headers=second).status_code == 404
+
+    owner_dashboard = client.get("/api/dashboard", headers=first).get_json()
+    assert [item["id"] for item in owner_dashboard["transactions"]] == [tx["id"]]
+    assert [item["id"] for item in owner_dashboard["budgets"]] == [budget["id"]]
+    assert [item["id"] for item in owner_dashboard["goals"]] == [goal["id"]]
+
+
+def test_clear_data_only_clears_current_user(client):
+    first = firebase_headers("first@example.com", "first-clear-uid")
+    second = firebase_headers("second@example.com", "second-clear-uid")
+    for headers, label in [(first, "First"), (second, "Second")]:
+        client.post("/api/transactions", headers=headers, json={"description": label, "amount": -10, "category": "Other", "date": "2026-08-18"})
+        client.post("/api/budgets", headers=headers, json={"category": "Other", "limit": 100})
+        client.post("/api/goals", headers=headers, json={"name": f"{label} goal", "target": 500, "saved": 50})
+
+    assert client.delete("/api/data", headers=first).status_code == 200
+    first_dashboard = client.get("/api/dashboard", headers=first).get_json()
+    second_dashboard = client.get("/api/dashboard", headers=second).get_json()
+    assert first_dashboard["transactions"] == []
+    assert first_dashboard["budgets"] == []
+    assert first_dashboard["goals"] == []
+    assert len(second_dashboard["transactions"]) == 1
+    assert len(second_dashboard["budgets"]) == 1
+    assert len(second_dashboard["goals"]) == 1
+
+
 def test_demo_reset_and_clear_data(client, auth_headers):
     client.post("/api/transactions", headers=auth_headers, json={"description": "Old", "amount": -10, "category": "Other", "date": "2026-08-18"})
     reset = client.post("/api/demo/reset", headers=auth_headers)
