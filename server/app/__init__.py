@@ -11,7 +11,7 @@ from .extensions import db
 from .routes import api
 
 MAX_MONEY = 999_999_999.99
-MONEY_FIELDS = {"amount", "limit", "target", "saved"}
+MONEY_FIELDS = {"amount", "limit", "target", "saved", "openingBalance", "opening_balance"}
 MAX_TRANSACTION_DESCRIPTION = 80
 MAX_TRANSACTION_NOTES = 500
 
@@ -22,8 +22,6 @@ def ensure_auth_schema():
         return
 
     existing = {column["name"] for column in inspector.get_columns("user")}
-    # Keep migrations additive so the existing Render database and local SQLite files
-    # remain compatible while Firebase becomes the identity authority.
     additions = {
         "firebase_uid": "VARCHAR(128)",
         "email_verified_at": "TIMESTAMP",
@@ -38,6 +36,40 @@ def ensure_auth_schema():
         if name not in existing:
             db.session.execute(text(f'ALTER TABLE "user" ADD COLUMN {name} {definition}'))
     db.session.execute(text('CREATE UNIQUE INDEX IF NOT EXISTS ix_user_firebase_uid ON "user" (firebase_uid)'))
+    db.session.commit()
+
+
+def ensure_finance_schema():
+    """Apply additive production-safe upgrades without rewriting existing user data."""
+    inspector = inspect(db.engine)
+
+    if inspector.has_table("transaction"):
+        existing = {column["name"] for column in inspector.get_columns("transaction")}
+        additions = {
+            "account_id": "INTEGER",
+            "transaction_type": "VARCHAR(16)",
+            "subcategory": "VARCHAR(80)",
+            "tags": "VARCHAR(500)",
+            "transfer_group": "VARCHAR(64)",
+        }
+        for name, definition in additions.items():
+            if name not in existing:
+                db.session.execute(text(f'ALTER TABLE "transaction" ADD COLUMN {name} {definition}'))
+        db.session.execute(text(
+            "UPDATE \"transaction\" SET transaction_type = "
+            "CASE WHEN amount >= 0 THEN 'income' ELSE 'expense' END "
+            "WHERE transaction_type IS NULL OR transaction_type = ''"
+        ))
+        db.session.execute(text('CREATE INDEX IF NOT EXISTS ix_transaction_account_id ON "transaction" (account_id)'))
+        db.session.execute(text('CREATE INDEX IF NOT EXISTS ix_transaction_transfer_group ON "transaction" (transfer_group)'))
+
+    if inspector.has_table("goal"):
+        existing = {column["name"] for column in inspector.get_columns("goal")}
+        additions = {"target_date": "DATE", "notes": "TEXT"}
+        for name, definition in additions.items():
+            if name not in existing:
+                db.session.execute(text(f'ALTER TABLE "goal" ADD COLUMN {name} {definition}'))
+
     db.session.commit()
 
 
@@ -110,10 +142,8 @@ def create_app(test_config=None):
             payload = request.get_json(silent=True)
             oversized_field = oversized_money_value(payload)
             if oversized_field:
-                return jsonify({
-                    "error": f"{oversized_field.capitalize()} cannot exceed $999,999,999.99."
-                }), 400
-            if request.path.startswith("/api/transactions"):
+                return jsonify({"error": f"{oversized_field.replace('_', ' ').capitalize()} cannot exceed $999,999,999.99."}), 400
+            if request.path.startswith("/api/transactions") or request.path.startswith("/api/transfers"):
                 text_error = oversized_transaction_text(payload)
                 if text_error:
                     return jsonify({"error": text_error}), 400
@@ -136,5 +166,6 @@ def create_app(test_config=None):
     with app.app_context():
         db.create_all()
         ensure_auth_schema()
+        ensure_finance_schema()
 
     return app
