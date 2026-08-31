@@ -21,17 +21,48 @@ class User(db.Model):
         self.password_hash = generate_password_hash(value)
 
 
+class FinancialAccount(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    name = db.Column(db.String(120), nullable=False)
+    account_type = db.Column(db.String(32), nullable=False, default="checking", index=True)
+    institution = db.Column(db.String(120), nullable=True)
+    opening_balance = db.Column(db.Float, nullable=False, default=0)
+    description = db.Column(db.String(500), nullable=True)
+    include_in_totals = db.Column(db.Boolean, nullable=False, default=True)
+    archived = db.Column(db.Boolean, nullable=False, default=False, index=True)
+    created_at = db.Column(db.DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
+
+
 class Transaction(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    account_id = db.Column(db.Integer, db.ForeignKey("financial_account.id"), nullable=True, index=True)
     description = db.Column(db.String(180), nullable=False)
     amount = db.Column(db.Float, nullable=False)
+    transaction_type = db.Column(db.String(16), nullable=False, default="expense", index=True)
     category = db.Column(db.String(80), nullable=False, index=True)
+    subcategory = db.Column(db.String(80), nullable=True)
+    tags = db.Column(db.String(500), nullable=True)
+    transfer_group = db.Column(db.String(64), nullable=True, index=True)
     date = db.Column(db.Date, default=date.today, nullable=False, index=True)
     notes = db.Column(db.Text)
 
-    def to_dict(self):
-        return {"id": self.id, "description": self.description, "amount": self.amount, "category": self.category, "date": self.date.isoformat(), "notes": self.notes or ""}
+    def to_dict(self, account_name=None):
+        return {
+            "id": self.id,
+            "description": self.description,
+            "amount": self.amount,
+            "transactionType": self.transaction_type or ("income" if self.amount >= 0 else "expense"),
+            "accountId": self.account_id,
+            "accountName": account_name,
+            "category": self.category,
+            "subcategory": self.subcategory or "",
+            "tags": [tag.strip() for tag in (self.tags or "").split(",") if tag.strip()],
+            "transferGroup": self.transfer_group,
+            "date": self.date.isoformat(),
+            "notes": self.notes or "",
+        }
 
 
 class Budget(db.Model):
@@ -47,3 +78,5 @@ class Goal(db.Model):
     name = db.Column(db.String(120), nullable=False)
     target = db.Column(db.Float, nullable=False)
     saved = db.Column(db.Float, default=0, nullable=False)
+    target_date = db.Column(db.Date, nullable=True)
+    notes = db.Column(db.Text, nullable=True)
