@@ -1,0 +1,116 @@
+.mobile-nav-toggle {
+  display: none;
+}
+
+@media (max-width: 600px) {
+  .sidebar {
+    grid-template-columns: minmax(0, 1fr) auto auto !important;
+  }
+
+  .brand {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .mobile-nav-toggle {
+    grid-column: 2;
+    grid-row: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 38px;
+    padding: 8px 11px;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    background: color-mix(in srgb, var(--panel) 92%, transparent);
+    color: var(--text);
+    cursor: pointer;
+    font-weight: 700;
+  }
+
+  .mobile-nav-toggle:hover,
+  .mobile-nav-toggle[aria-expanded='true'] {
+    border-color: color-mix(in srgb, var(--green) 55%, var(--border));
+    background: var(--theme-active);
+  }
+
+  .mobile-nav-icon {
+    width: 18px;
+    height: 14px;
+    display: grid;
+    align-content: space-between;
+  }
+
+  .mobile-nav-icon i {
+    display: block;
+    width: 100%;
+    height: 2px;
+    border-radius: 999px;
+    background: currentColor;
+    transition: transform .18s ease, opacity .18s ease;
+  }
+
+  .mobile-nav-toggle[aria-expanded='true'] .mobile-nav-icon i:nth-child(1) {
+    transform: translateY(6px) rotate(45deg);
+  }
+
+  .mobile-nav-toggle[aria-expanded='true'] .mobile-nav-icon i:nth-child(2) {
+    opacity: 0;
+  }
+
+  .mobile-nav-toggle[aria-expanded='true'] .mobile-nav-icon i:nth-child(3) {
+    transform: translateY(-6px) rotate(-45deg);
+  }
+
+  .sidebar-foot {
+    grid-column: 3 !important;
+    grid-row: 1 !important;
+  }
+
+  .sidebar nav {
+    grid-column: 1 / -1 !important;
+    grid-row: 2 !important;
+    display: none !important;
+    width: 100% !important;
+    margin: 2px 0 0 !important;
+    padding: 8px 0 0 !important;
+    border-top: 1px solid var(--border);
+  }
+
+  .sidebar.mobile-menu-open nav {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 6px !important;
+  }
+
+  .sidebar.mobile-menu-open nav button {
+    width: 100%;
+    min-height: 44px;
+    justify-content: flex-start;
+    text-align: left;
+    white-space: nowrap !important;
+    padding: 11px 13px !important;
+    font-size: 13px;
+    border: 1px solid transparent;
+  }
+
+  .sidebar.mobile-menu-open nav button.active {
+    border-color: color-mix(in srgb, var(--green) 55%, var(--border));
+  }
+
+  .sidebar.mobile-menu-open .nav-dot {
+    display: block;
+  }
+}
+
+@media (max-width: 430px) {
+  .mobile-nav-label {
+    display: none;
+  }
+
+  .mobile-nav-toggle {
+    width: 40px;
+    padding-inline: 10px;
+  }
+}
