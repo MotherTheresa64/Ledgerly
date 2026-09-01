@@ -1,15 +1,16 @@
 # Firebase Authentication setup
 
-Ledgerly uses Firebase Authentication for identity and keeps all finance data in PostgreSQL on Render.
+Ledgerly uses Firebase Authentication for identity and keeps authoritative finance data in PostgreSQL.
 
-## 1. Create the Firebase project
+## 1. Create/register a Firebase Web app
 
-1. Open the Firebase console and create a project named `Ledgerly` (or another name you prefer).
-2. Google Analytics is optional for Ledgerly authentication and can be skipped.
-3. In the project overview, add a **Web app** and name it `Ledgerly Web`.
-4. Copy the Firebase configuration values shown after registration.
+In Firebase Console:
 
-Ledgerly needs these client values:
+1. Create or select the Ledgerly Firebase project.
+2. Register a Web app.
+3. Copy the browser configuration values.
+
+Ledgerly's Vite frontend expects:
 
 ```text
 VITE_FIREBASE_API_KEY
@@ -18,132 +19,174 @@ VITE_FIREBASE_PROJECT_ID
 VITE_FIREBASE_APP_ID
 ```
 
-The web Firebase configuration is not a server credential. Firebase expects these values to be used by the browser SDK.
+These Web SDK values are intentionally browser-visible configuration. They are not Firebase Admin private credentials.
 
 ## 2. Enable Email/Password Authentication
 
-In Firebase Console:
+Under **Authentication → Sign-in method**, enable **Email/Password**.
 
-1. Open **Authentication**.
-2. Open **Sign-in method**.
-3. Enable **Email/Password**.
-4. Save.
+Firebase owns:
 
-Ledgerly uses Firebase for:
-
-- account creation
+- registration
 - sign-in
 - email verification
 - password reset
 - password changes
-- reauthentication before destructive account actions
+- recent-login reauthentication
 
-## 3. Set authentication policy
+Ledgerly's backend does not run its own password login endpoint.
 
-Recommended consumer settings:
+## 3. Configure authentication policy
 
-- Require a password of at least 8 characters or stronger.
-- Enable email enumeration protection if available for the project.
-- Keep Ledgerly's backend setting `FIREBASE_REQUIRE_VERIFIED_EMAIL=true` so unverified accounts cannot access finance data.
+Recommended production settings:
 
-Firebase sends the verification and password-reset messages. Custom email branding/domain configuration can be added later without changing Ledgerly's API architecture.
+- keep `FIREBASE_REQUIRE_VERIFIED_EMAIL=true` on the API;
+- configure a strong Firebase password policy appropriate for the deployment;
+- enable email-enumeration protection if available/appropriate;
+- review Firebase abuse/quota protections;
+- customize verification/reset emails if presenting Ledgerly publicly.
+
+The backend verifies Firebase ID tokens with revocation checking. A valid but unverified email cannot enter the finance API while verified-email enforcement is enabled.
 
 ## 4. Add authorized domains
 
-Under **Authentication → Settings → Authorized domains**, ensure these are authorized:
+Under **Authentication → Settings → Authorized domains**, authorize:
 
 ```text
 localhost
-ledgerly-web-knmt.onrender.com
+<your Ledgerly frontend Render/custom domain>
 ```
 
-Add any future custom Ledgerly domain here as well.
+Do not assume a prior Render hostname is still correct; use the exact deployed frontend host.
 
-## 5. Create the backend service-account credential
+## 5. Configure Firebase Admin on the API
 
-The Flask API verifies Firebase ID tokens with the Firebase Admin SDK.
+The Flask API needs a trusted Admin credential to verify tokens and delete a Firebase user during permanent Ledgerly account deletion.
 
-In Firebase Console:
+Supported configuration paths:
 
-1. Open **Project settings**.
-2. Open **Service accounts**.
-3. Choose **Firebase Admin SDK**.
-4. Generate a new private key.
-5. Keep the downloaded JSON file private. Never commit it to GitHub.
-
-For Render, convert the JSON file to a single-line JSON value and store the entire value as:
+### Render environment JSON
 
 ```text
-FIREBASE_SERVICE_ACCOUNT_JSON
-```
-
-Also set:
-
-```text
-FIREBASE_PROJECT_ID=<your Firebase project id>
+FIREBASE_PROJECT_ID=<project id>
+FIREBASE_SERVICE_ACCOUNT_JSON=<single-line service-account JSON>
 FIREBASE_REQUIRE_VERIFIED_EMAIL=true
 ```
 
-## 6. Configure the Render static frontend
-
-On `ledgerly-web`, set:
+### Protected secret file / Application Default Credentials
 
 ```text
-VITE_API_URL=https://ledgerly-api-4uur.onrender.com/api
-VITE_FIREBASE_API_KEY=<apiKey from Firebase Web app>
-VITE_FIREBASE_AUTH_DOMAIN=<authDomain from Firebase Web app>
-VITE_FIREBASE_PROJECT_ID=<projectId from Firebase Web app>
-VITE_FIREBASE_APP_ID=<appId from Firebase Web app>
+GOOGLE_APPLICATION_CREDENTIALS=<path to protected service-account file>
+FIREBASE_PROJECT_ID=<project id>
+FIREBASE_REQUIRE_VERIFIED_EMAIL=true
 ```
 
-Vite reads these values during the frontend build, so changing one requires a new static-site deploy.
+Never place a service-account private key in the frontend, Git repository, screenshots, logs, or public issue text.
+
+## 6. Configure the Render frontend
+
+Set on the static frontend service:
+
+```text
+VITE_API_URL=https://<ledgerly-api-host>/api
+VITE_FIREBASE_API_KEY=<Firebase Web apiKey>
+VITE_FIREBASE_AUTH_DOMAIN=<Firebase authDomain>
+VITE_FIREBASE_PROJECT_ID=<Firebase project id>
+VITE_FIREBASE_APP_ID=<Firebase Web app id>
+```
+
+Vite consumes these at build time, so changing them requires a rebuild/redeploy.
 
 ## 7. Configure the Render API
 
-On `ledgerly-api`, keep the existing database and CORS configuration and add:
+Set/verify:
 
 ```text
-FIREBASE_PROJECT_ID=<your Firebase project id>
-FIREBASE_SERVICE_ACCOUNT_JSON=<single-line private service-account JSON>
+CLIENT_ORIGIN=https://<exact-ledgerly-frontend-host>
+FIREBASE_PROJECT_ID=<project id>
+FIREBASE_SERVICE_ACCOUNT_JSON=<protected Admin JSON>
 FIREBASE_REQUIRE_VERIFIED_EMAIL=true
 ```
 
-The service-account value is privileged. Do not place it in the frontend, repository, screenshots, or chat messages.
+`DATABASE_URL` is supplied by the Render PostgreSQL binding in `render.yaml`.
 
-## 8. Migration behavior
+The API deployment runs:
 
-Ledgerly preserves the existing PostgreSQL finance schema.
+```text
+flask --app run.py db upgrade
+```
 
-When a verified Firebase user calls the API for the first time:
+before Gunicorn starts. Take a PostgreSQL backup before the first deployment containing the fixed-precision migration; see [`MONEY_AND_MIGRATIONS.md`](MONEY_AND_MIGRATIONS.md).
 
-1. Flask verifies the Firebase ID token.
-2. Ledgerly looks for a user already mapped to that Firebase UID.
-3. If none exists, Ledgerly checks for an existing local Ledgerly record with the same verified email.
-4. If found, that existing record is linked to the Firebase UID so its transactions, budgets, goals, and account history remain intact.
-5. Otherwise a new Ledgerly user record is created.
+## 8. Firebase UID → Ledgerly user mapping
 
-The old password hash column remains only because the deployed PostgreSQL table already has a non-null legacy column. New user credentials are never stored or validated by Ledgerly.
+On each protected request:
 
-## 9. Production smoke test
+1. browser sends the current Firebase ID token;
+2. Firebase Admin verifies it (including revocation state);
+3. Ledgerly reads the verified `uid`, `email`, and `email_verified` claims;
+4. existing `firebase_uid` mapping is used when present;
+5. otherwise, a pre-Firebase Ledgerly row can be linked by the same **verified** email if it is not already linked to another UID;
+6. otherwise a new Ledgerly user is created.
 
-After deployment:
+If a mapped Firebase user's email changes, Ledgerly updates the local email only when it does not collide with another Ledgerly account.
 
-1. Register a fresh email address.
-2. Confirm Firebase sends a verification message.
-3. Verify the email.
-4. Enter Ledgerly and load demo data.
-5. Refresh and confirm data persists.
-6. Sign out and confirm protected data is no longer visible.
-7. Sign back in.
-8. Use **Forgot password** and confirm the Firebase reset message arrives.
-9. Change the password from Ledgerly Settings and confirm the old password no longer works.
-10. Create a transaction, budget, and goal and confirm normal CRUD behavior.
-11. Test the live layout on desktop and a phone at native zoom.
-12. Delete a disposable test account and confirm both the Ledgerly data and Firebase account are removed.
+The historical non-null `password_hash` column may remain in an upgraded database. New Firebase users receive a random unusable placeholder because Firebase, not Ledgerly, is the password authority.
 
-## Security notes
+## 9. Permanent account deletion
 
-- Browser requests send Firebase ID tokens over HTTPS in the `Authorization` header.
-- Flask validates ID-token signatures, expiry, revocation state, Firebase project, and verified-email status before resolving finance ownership.
-- The Firebase service-account private key is backend-only.
-- Financial data remains in PostgreSQL and is always queried by Ledgerly's internal user id after Firebase authentication succeeds.
+The browser first reauthenticates the user with Firebase to satisfy recent-login requirements.
+
+The API then receives an authenticated account-deletion request with explicit `DELETE` confirmation and uses the Firebase UID already mapped to that Ledgerly user. The client cannot select a different UID to delete.
+
+Deletion stages:
+
+1. Ledgerly finance data;
+2. Firebase user via Admin SDK;
+3. Ledgerly user metadata.
+
+If Firebase deletion fails after financial records were removed, the endpoint returns explicit partial-state information and keeps the Ledgerly identity row available for a retry/support path. This is safer than silently reporting success across two independent services.
+
+## 10. Production smoke test
+
+Use disposable test accounts/data:
+
+1. Register a new Firebase Email/Password account.
+2. Confirm finance access is denied before verification.
+3. Verify the email and open Ledgerly.
+4. Add accounts, including a credit/loan account, and verify liability/net-worth behavior.
+5. Add income and expense transactions.
+6. Transfer between two accounts and confirm income/expenses do not change.
+7. Refresh and confirm PostgreSQL persistence.
+8. Sign out and verify protected data is not accessible.
+9. Sign in again.
+10. Test Forgot Password and password change.
+11. Test CSV import/export and JSON backup export.
+12. Test budgets/goals, including an overfunded goal.
+13. Test the live layout at phone/tablet/desktop widths.
+14. Delete a disposable account and verify the Firebase user can no longer sign in and Ledgerly finance data is gone.
+15. Inspect API logs to ensure tokens/service-account material are not logged.
+
+## Troubleshooting
+
+### `firebase_not_configured` / HTTP 503
+
+The API cannot initialize Firebase Admin. Verify project id and Admin credentials are present in the API environment.
+
+### HTTP 401 for a valid login
+
+Check:
+
+- email verification status;
+- Firebase project mismatch between client and API;
+- token revocation/expiration;
+- authorized frontend domain;
+- whether the local email is already bound to a different Firebase UID.
+
+### CORS failure
+
+Set `CLIENT_ORIGIN` to the exact frontend origin, including scheme and without an unrelated path.
+
+### Account deletion fails after finance data removal
+
+Read the endpoint's partial-state fields. If `dataDeleted=true` and `firebaseDeleted=false`, the authenticated identity still exists and the deletion can be retried after Firebase/Admin configuration is repaired.

@@ -1,0 +1,230 @@
+/* Final responsive/accessibility hardening layer. Kept separate so existing themes retain ownership of visual identity. */
+
+:where(button, a, input, select, textarea):focus-visible {
+  outline: 3px solid var(--green2);
+  outline-offset: 3px;
+}
+
+:where(button, input, select) {
+  min-height: 44px;
+}
+
+textarea {
+  min-height: 88px;
+}
+
+.card-head,
+.transaction,
+.amount-wrap,
+.transaction-main,
+.row-actions,
+.filters,
+.field-row {
+  min-width: 0;
+}
+
+.transaction-main strong,
+.transaction-main span,
+.transaction-main small,
+.card-head h3,
+.card-head p,
+.card-head span {
+  overflow-wrap: anywhere;
+}
+
+.transaction[hidden] {
+  display: none !important;
+}
+
+.progress {
+  position: relative;
+}
+
+.progress::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.pagination-mobile-current {
+  min-width: 72px;
+  text-align: center;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+}
+
+@media (max-width: 1100px) {
+  .metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .overview-grid,
+  .grid.two,
+  .form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .filters,
+  .filters.wide {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .dashboard {
+    padding: 22px 16px 32px;
+  }
+
+  .dashboard header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .dashboard header > button {
+    width: 100%;
+  }
+
+  .metrics,
+  .budget-grid,
+  .goal-grid,
+  .account-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .filters,
+  .filters.wide {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .filters > :first-child {
+    grid-column: 1 / -1;
+  }
+
+  .card-head {
+    flex-wrap: wrap;
+  }
+
+  .card-head > .row-actions {
+    width: 100%;
+  }
+
+  .card-head > .row-actions button {
+    flex: 1 1 auto;
+  }
+}
+
+@media (max-width: 600px) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  .dashboard {
+    padding-inline: 12px;
+  }
+
+  .card,
+  .metric {
+    border-radius: 12px;
+    padding: 16px;
+  }
+
+  .field-row,
+  .filters,
+  .filters.wide,
+  .type-toggle.three {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .filters > :first-child {
+    grid-column: auto;
+  }
+
+  .transaction {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .transaction-main {
+    width: 100%;
+  }
+
+  .transaction-main strong {
+    white-space: normal;
+  }
+
+  .amount-wrap {
+    width: 100%;
+    justify-content: space-between;
+    padding-left: 42px;
+  }
+
+  .row-actions {
+    flex-wrap: wrap;
+  }
+
+  .row-actions button {
+    min-height: 44px;
+    padding: 9px 12px;
+  }
+
+  .transaction-pagination {
+    flex-wrap: nowrap;
+  }
+
+  .transaction-pagination button {
+    min-width: 48px;
+    min-height: 48px;
+  }
+
+  .pagination-summary {
+    display: none;
+  }
+
+  .trend-chart {
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    padding-bottom: 4px;
+  }
+
+  .trend-column {
+    min-width: 46px;
+  }
+
+  .toast {
+    top: 12px;
+    left: 12px;
+    right: 12px;
+    max-width: none;
+  }
+}
+
+@media (max-width: 380px) {
+  .dashboard {
+    padding-inline: 8px;
+  }
+
+  .card,
+  .metric {
+    padding: 14px;
+  }
+
+  .amount-wrap {
+    padding-left: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}

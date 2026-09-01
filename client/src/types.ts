@@ -36,6 +36,9 @@ export type Goal = {
   notes: string
   amountRemaining: number
   percentComplete: number
+  isOverfunded: boolean
+  overfundedBy: number
+  trackingOnly: boolean
 }
 
 export type MonthlyTrend = {
@@ -49,9 +52,11 @@ export type FinancialAccount = {
   id: number
   name: string
   type: 'checking' | 'savings' | 'cash' | 'credit' | 'loan' | 'investment' | 'other'
+  balanceRole: 'asset' | 'liability'
   institution: string
   openingBalance: number
   currentBalance: number
+  netWorthContribution: number
   description: string
   includeInTotals: boolean
   archived: boolean
@@ -83,7 +88,10 @@ export type MonthlyPlan = {
 
 export type Dashboard = {
   totalBalance: number
+  netWorth: number
   availableBalance: number
+  assetBalance: number
+  liabilityBalance: number
   income: number
   expenses: number
   netCashFlow: number
@@ -101,6 +109,8 @@ export type Dashboard = {
 }
 
 export type ExportBundle = {
+  schemaVersion: number
+  moneySemantics: string
   exportedAt: string
   accounts: FinancialAccount[]
   transactions: Transaction[]

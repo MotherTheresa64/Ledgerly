@@ -1,8 +1,9 @@
-import { EmailAuthProvider, deleteUser, reauthenticateWithCredential, updatePassword } from 'firebase/auth'
+import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from 'firebase/auth'
 import { firebaseAuth } from './firebase'
 import type { Account, Dashboard, ExportBundle, FinancialAccount, Goal, Transaction, TransactionType } from './types'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
+const REQUEST_TIMEOUT_MS = 15_000
 export const MAX_MONEY = 999_999_999.99
 
 export type AuthUser = { email: string; emailVerified: boolean }
@@ -22,7 +23,7 @@ export class ApiError extends Error {
   }
 }
 
-function assertMoney(value: number, label: string, allowZero = false) {
+export function assertMoney(value: number, label: string, allowZero = false) {
   const validMinimum = allowZero ? value >= 0 : value > 0
   if (!Number.isFinite(value) || !validMinimum || value > MAX_MONEY) {
     const minimum = allowZero ? '$0.00' : '$0.01'
@@ -38,24 +39,49 @@ async function currentFirebaseUser() {
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const user = await currentFirebaseUser()
   const token = user ? await user.getIdToken() : ''
-  const response = await fetch(`${API_URL}${path}`, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(options.headers || {}),
-    },
-  })
+  const controller = new AbortController()
+  const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
 
-  const data = await response.json().catch(() => ({})) as Record<string, unknown>
-  if (!response.ok) {
-    if (response.status === 401) {
-      localStorage.removeItem('ledgerly_token')
-      window.dispatchEvent(new CustomEvent('ledgerly:unauthorized'))
+  try {
+    const response = await fetch(`${API_URL}${path}`, {
+      ...options,
+      signal: options.signal || controller.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(options.headers || {}),
+      },
+    })
+
+    const contentType = response.headers.get('content-type') || ''
+    let data: Record<string, unknown> = {}
+    if (contentType.includes('application/json')) {
+      try {
+        data = await response.json() as Record<string, unknown>
+      } catch {
+        throw new ApiError('Ledgerly received an invalid response from the server.', response.status || 502, 'malformed_response')
+      }
+    } else if (response.status !== 204) {
+      throw new ApiError('Ledgerly received an unexpected response from the server.', response.status || 502, 'unexpected_response')
     }
-    throw new ApiError(String(data.error || data.msg || 'Request failed'), response.status, typeof data.code === 'string' ? data.code : undefined, data)
+
+    if (!response.ok) {
+      if (response.status === 401) {
+        localStorage.removeItem('ledgerly_token')
+        window.dispatchEvent(new CustomEvent('ledgerly:unauthorized'))
+      }
+      throw new ApiError(String(data.error || data.msg || 'Request failed'), response.status, typeof data.code === 'string' ? data.code : undefined, data)
+    }
+    return data as T
+  } catch (error) {
+    if (error instanceof ApiError) throw error
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new ApiError('Ledgerly could not reach the server before the request timed out.', 0, 'timeout')
+    }
+    throw new ApiError('Ledgerly could not reach the server. Check your connection and try again.', 0, 'network_error')
+  } finally {
+    window.clearTimeout(timeout)
   }
-  return data as T
 }
 
 export type TransactionInput = {
@@ -106,8 +132,12 @@ export const api = {
     const user = await currentFirebaseUser()
     if (!user?.email) throw new Error('Sign in again before deleting your account.')
     await reauthenticateWithCredential(user, EmailAuthProvider.credential(user.email, password))
-    const result = await request<{ deleted: boolean }>('/account', { method: 'DELETE' })
-    await deleteUser(user)
+    const result = await request<{ deleted: boolean; dataDeleted: boolean; firebaseDeleted: boolean; metadataDeleted: boolean }>('/account', {
+      method: 'DELETE',
+      body: JSON.stringify({ confirmation: 'DELETE' }),
+    })
+    localStorage.removeItem('ledgerly_token')
+    await firebaseAuth.signOut().catch(() => undefined)
     return result
   },
   dashboard: () => request<Dashboard>('/dashboard'),
@@ -126,13 +156,13 @@ export const api = {
     assertMoney(payload.amount, 'Transfer amount')
     return request<{ transferGroup: string; transactions: Transaction[] }>('/transfers', { method: 'POST', body: JSON.stringify(payload) })
   },
-  importTransactions: (transactions: TransactionInput[], defaultAccountId?: number | null, allowPartial = true) =>
-    request<{ imported: number; invalidRows: number[]; skippedDuplicates: number[] }>('/transactions/import', {
+  importTransactions: (transactions: TransactionInput[], defaultAccountId?: number | null, allowPartial = false) =>
+    request<{ imported: number; invalidRows: number[]; skippedDuplicates: number[]; importMode: 'atomic' | 'partial' }>('/transactions/import', {
       method: 'POST',
       body: JSON.stringify({ transactions: transactions.map(validateTransaction), defaultAccountId: defaultAccountId || null, allowPartial }),
     }),
   updateTransaction: (id: number, payload: TransactionInput) => request<Transaction>(`/transactions/${id}`, { method: 'PATCH', body: JSON.stringify(validateTransaction(payload)) }),
-  deleteTransaction: (id: number) => request<{ deleted: number; deletedTransfer?: string }>(`/transactions/${id}`, { method: 'DELETE' }),
+  deleteTransaction: (id: number) => request<{ deleted: number; deletedTransferEntries?: number; transferGroup?: string }>(`/transactions/${id}`, { method: 'DELETE' }),
   addBudget: (payload: { category: string; limit: number }) => {
     assertMoney(payload.limit, 'Monthly budget')
     return request('/budgets', { method: 'POST', body: JSON.stringify(payload) })
@@ -154,7 +184,7 @@ export const api = {
   },
   deleteGoal: (id: number) => request<{ deleted: number }>(`/goals/${id}`, { method: 'DELETE' }),
   exportData: () => request<ExportBundle>('/export'),
-  clearData: () => request<{ cleared: boolean }>('/data', { method: 'DELETE' }),
-  seedDemo: () => request<{ seeded: boolean }>('/demo/seed', { method: 'POST' }),
-  resetDemo: () => request<{ seeded: boolean; reset: boolean }>('/demo/reset', { method: 'POST' }),
+  clearData: () => request<{ cleared: boolean }>('/data', { method: 'DELETE', body: JSON.stringify({ confirmation: 'CLEAR' }) }),
+  seedDemo: () => request<{ seeded: boolean; sampleData: boolean }>('/demo/seed', { method: 'POST' }),
+  resetDemo: () => request<{ seeded: boolean; reset: boolean; sampleData: boolean }>('/demo/reset', { method: 'POST', body: JSON.stringify({ confirmation: 'RESET' }) }),
 }

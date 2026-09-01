@@ -21,6 +21,7 @@ def test_transaction_import_is_atomic(client, auth_headers):
     response = client.post("/api/transactions/import", headers=auth_headers, json={"transactions": valid})
     assert response.status_code == 201
     assert response.get_json()["imported"] == 2
+    assert response.get_json()["importMode"] == "atomic"
 
     before = client.get("/api/dashboard", headers=auth_headers).get_json()["transactions"]
     invalid = [
@@ -59,6 +60,7 @@ def test_all_financial_resources_are_isolated_between_users(client):
     assert other_dashboard["transactions"] == []
     assert other_dashboard["budgets"] == []
     assert other_dashboard["goals"] == []
+    assert client.get("/api/export", headers=second).get_json()["transactions"] == []
 
     assert client.delete(f"/api/transactions/{tx['id']}", headers=second).status_code == 404
     assert client.patch(f"/api/budgets/{budget['id']}", headers=second, json={"limit": 1}).status_code == 404
@@ -73,6 +75,13 @@ def test_all_financial_resources_are_isolated_between_users(client):
     assert [item["id"] for item in owner_dashboard["goals"]] == [goal["id"]]
 
 
+def test_destructive_data_routes_require_explicit_confirmation(client, auth_headers):
+    client.post("/api/transactions", headers=auth_headers, json={"description": "Keep", "amount": -10, "category": "Other", "date": "2026-08-18"})
+    assert client.delete("/api/data", headers=auth_headers).status_code == 400
+    assert client.post("/api/demo/reset", headers=auth_headers).status_code == 400
+    assert len(client.get("/api/dashboard", headers=auth_headers).get_json()["transactions"]) == 1
+
+
 def test_clear_data_only_clears_current_user(client):
     first = firebase_headers("first@example.com", "first-clear-uid")
     second = firebase_headers("second@example.com", "second-clear-uid")
@@ -81,7 +90,7 @@ def test_clear_data_only_clears_current_user(client):
         client.post("/api/budgets", headers=headers, json={"category": "Other", "limit": 100})
         client.post("/api/goals", headers=headers, json={"name": f"{label} goal", "target": 500, "saved": 50})
 
-    assert client.delete("/api/data", headers=first).status_code == 200
+    assert client.delete("/api/data", headers=first, json={"confirmation": "CLEAR"}).status_code == 200
     first_dashboard = client.get("/api/dashboard", headers=first).get_json()
     second_dashboard = client.get("/api/dashboard", headers=second).get_json()
     assert first_dashboard["transactions"] == []
@@ -94,15 +103,16 @@ def test_clear_data_only_clears_current_user(client):
 
 def test_demo_reset_and_clear_data(client, auth_headers):
     client.post("/api/transactions", headers=auth_headers, json={"description": "Old", "amount": -10, "category": "Other", "date": "2026-08-18"})
-    reset = client.post("/api/demo/reset", headers=auth_headers)
+    reset = client.post("/api/demo/reset", headers=auth_headers, json={"confirmation": "RESET"})
     assert reset.status_code == 200
+    assert reset.get_json()["sampleData"] is True
     dashboard = client.get("/api/dashboard", headers=auth_headers).get_json()
     assert len(dashboard["monthlyTrend"]) == 6
     assert len(dashboard["transactions"]) > 20
     assert len(dashboard["budgets"]) == 4
     assert len(dashboard["goals"]) == 2
 
-    cleared = client.delete("/api/data", headers=auth_headers)
+    cleared = client.delete("/api/data", headers=auth_headers, json={"confirmation": "CLEAR"})
     assert cleared.status_code == 200
     dashboard = client.get("/api/dashboard", headers=auth_headers).get_json()
     assert dashboard["transactions"] == []
@@ -110,8 +120,13 @@ def test_demo_reset_and_clear_data(client, auth_headers):
     assert dashboard["goals"] == []
 
 
-def test_delete_account_removes_ledgerly_data(client, auth_headers):
+def test_delete_account_removes_ledgerly_and_test_firebase_identity(client, auth_headers):
     client.post("/api/transactions", headers=auth_headers, json={"description": "Private", "amount": -25, "category": "Other", "date": "2026-08-18"})
-    deleted = client.delete("/api/account", headers=auth_headers)
+    assert client.delete("/api/account", headers=auth_headers).status_code == 400
+    deleted = client.delete("/api/account", headers=auth_headers, json={"confirmation": "DELETE"})
     assert deleted.status_code == 200
-    assert deleted.get_json()["deleted"] is True
+    payload = deleted.get_json()
+    assert payload["deleted"] is True
+    assert payload["dataDeleted"] is True
+    assert payload["firebaseDeleted"] is True
+    assert payload["metadataDeleted"] is True
