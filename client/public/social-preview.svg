@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
+  <title id="title">Ledgerly — Know where your money goes</title>
+  <desc id="desc">Dark emerald finance dashboard social preview for Ledgerly.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#080d0b"/><stop offset="1" stop-color="#10211a"/></linearGradient>
+    <radialGradient id="glow" cx="75%" cy="0%" r="85%"><stop stop-color="#44d39b" stop-opacity=".23"/><stop offset="1" stop-color="#44d39b" stop-opacity="0"/></radialGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#43d39b"/><stop offset="1" stop-color="#80e0ae"/></linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="20" stdDeviation="25" flood-color="#000" flood-opacity=".4"/></filter>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/><rect width="1200" height="630" fill="url(#glow)"/>
+  <g transform="translate(80 74)"><rect width="66" height="66" rx="18" fill="url(#accent)" filter="url(#shadow)"/><path d="M20 19h26v28H20z" fill="#0b1712" rx="3"/><path d="M25 27h16M25 34h11M25 41h14" stroke="#75dca9" stroke-width="3" stroke-linecap="round"/><text x="87" y="45" font-family="Inter,Arial,sans-serif" font-size="36" font-weight="800" fill="#f2faf6">Ledgerly</text></g>
+  <text x="82" y="259" font-family="Inter,Arial,sans-serif" font-size="61" font-weight="800" letter-spacing="-2" fill="#f2faf6">Know where your</text>
+  <text x="82" y="330" font-family="Inter,Arial,sans-serif" font-size="61" font-weight="800" letter-spacing="-2" fill="#f2faf6">money goes.</text>
+  <text x="86" y="394" font-family="Inter,Arial,sans-serif" font-size="21" fill="#9fb5aa">Accounts, transactions, budgets, goals, transfers, reports,</text>
+  <text x="86" y="426" font-family="Inter,Arial,sans-serif" font-size="21" fill="#9fb5aa">and clean financial insights in one responsive workspace.</text>
+  <g transform="translate(732 148)" filter="url(#shadow)">
+    <rect width="386" height="350" rx="28" fill="#111d18" stroke="#284238"/>
+    <rect x="24" y="24" width="338" height="78" rx="17" fill="#17261f"/>
+    <text x="44" y="49" font-family="Inter,Arial,sans-serif" font-size="11" fill="#8da49a">NET BALANCE</text><text x="44" y="80" font-family="Inter,Arial,sans-serif" font-size="29" font-weight="800" fill="#eff8f4">$12,480.32</text><rect x="262" y="42" width="78" height="25" rx="12.5" fill="#1e4938"/><text x="301" y="59" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="11" font-weight="700" fill="#76deb0">+8.4%</text>
+    <rect x="24" y="122" width="160" height="96" rx="16" fill="#17261f" stroke="#263f35"/><text x="43" y="148" font-family="Inter,Arial,sans-serif" font-size="10" fill="#8da49a">SPENDING</text><text x="43" y="177" font-family="Inter,Arial,sans-serif" font-size="23" font-weight="800" fill="#eff8f4">$2,146</text><rect x="43" y="193" width="117" height="7" rx="3.5" fill="#294238"/><rect x="43" y="193" width="78" height="7" rx="3.5" fill="#e6ad62"/>
+    <rect x="202" y="122" width="160" height="96" rx="16" fill="#17261f" stroke="#263f35"/><text x="221" y="148" font-family="Inter,Arial,sans-serif" font-size="10" fill="#8da49a">SAVINGS</text><text x="221" y="177" font-family="Inter,Arial,sans-serif" font-size="23" font-weight="800" fill="#eff8f4">$1,320</text><rect x="221" y="193" width="117" height="7" rx="3.5" fill="#294238"/><rect x="221" y="193" width="91" height="7" rx="3.5" fill="url(#accent)"/>
+    <rect x="24" y="238" width="338" height="88" rx="16" fill="#17261f" stroke="#263f35"/><circle cx="49" cy="264" r="9" fill="#43d39b"/><rect x="67" y="258" width="112" height="10" rx="5" fill="#eff8f4" fill-opacity=".9"/><rect x="267" y="258" width="69" height="10" rx="5" fill="#eff8f4" fill-opacity=".82"/><circle cx="49" cy="299" r="9" fill="#e6ad62"/><rect x="67" y="293" width="93" height="10" rx="5" fill="#eff8f4" fill-opacity=".86"/><rect x="277" y="293" width="59" height="10" rx="5" fill="#eff8f4" fill-opacity=".72"/>
+  </g>
+  <g transform="translate(84 506)"><rect width="183" height="42" rx="21" fill="#12231b" stroke="#2d4a3d"/><circle cx="24" cy="21" r="6" fill="#43d39b"/><text x="41" y="27" font-family="Inter,Arial,sans-serif" font-size="15" font-weight="700" fill="#deeee6">Full-stack finance app</text></g>
+  <text x="1118" y="540" text-anchor="end" font-family="Inter,Arial,sans-serif" font-size="16" fill="#789084">React · TypeScript · Flask · SQL</text>
+</svg>
