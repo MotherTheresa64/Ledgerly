@@ -3,7 +3,7 @@ from datetime import UTC, date, datetime
 from werkzeug.security import generate_password_hash
 
 from .extensions import db
-from .money import cents_to_dollars, legacy_float
+from .money import cents_to_dollars, legacy_float, to_cents
 
 
 class User(db.Model):
@@ -39,6 +39,13 @@ class FinancialAccount(db.Model):
     archived = db.Column(db.Boolean, nullable=False, default=False, index=True)
     created_at = db.Column(db.DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
 
+    def __init__(self, **kwargs):
+        if "opening_balance_cents" not in kwargs and "opening_balance" in kwargs:
+            kwargs["opening_balance_cents"] = to_cents(kwargs["opening_balance"], label="Opening balance")
+        elif "opening_balance_cents" in kwargs and "opening_balance" not in kwargs:
+            kwargs["opening_balance"] = legacy_float(int(kwargs["opening_balance_cents"]))
+        super().__init__(**kwargs)
+
     def set_opening_balance_cents(self, cents: int):
         self.opening_balance_cents = int(cents)
         self.opening_balance = legacy_float(cents)
@@ -59,6 +66,13 @@ class Transaction(db.Model):
     transfer_group = db.Column(db.String(64), nullable=True, index=True)
     date = db.Column(db.Date, default=date.today, nullable=False, index=True)
     notes = db.Column(db.Text)
+
+    def __init__(self, **kwargs):
+        if "amount_cents" not in kwargs and "amount" in kwargs:
+            kwargs["amount_cents"] = to_cents(kwargs["amount"], label="Transaction amount")
+        elif "amount_cents" in kwargs and "amount" not in kwargs:
+            kwargs["amount"] = legacy_float(int(kwargs["amount_cents"]))
+        super().__init__(**kwargs)
 
     def set_amount_cents(self, cents: int):
         self.amount_cents = int(cents)
@@ -90,6 +104,13 @@ class Budget(db.Model):
     limit = db.Column(db.Float, nullable=False)
     limit_cents = db.Column(db.BigInteger, nullable=False, default=0)
 
+    def __init__(self, **kwargs):
+        if "limit_cents" not in kwargs and "limit" in kwargs:
+            kwargs["limit_cents"] = to_cents(kwargs["limit"], label="Monthly budget")
+        elif "limit_cents" in kwargs and "limit" not in kwargs:
+            kwargs["limit"] = legacy_float(int(kwargs["limit_cents"]))
+        super().__init__(**kwargs)
+
     def set_limit_cents(self, cents: int):
         self.limit_cents = int(cents)
         self.limit = legacy_float(cents)
@@ -106,6 +127,17 @@ class Goal(db.Model):
     saved_cents = db.Column(db.BigInteger, default=0, nullable=False)
     target_date = db.Column(db.Date, nullable=True)
     notes = db.Column(db.Text, nullable=True)
+
+    def __init__(self, **kwargs):
+        if "target_cents" not in kwargs and "target" in kwargs:
+            kwargs["target_cents"] = to_cents(kwargs["target"], label="Goal target")
+        elif "target_cents" in kwargs and "target" not in kwargs:
+            kwargs["target"] = legacy_float(int(kwargs["target_cents"]))
+        if "saved_cents" not in kwargs and "saved" in kwargs:
+            kwargs["saved_cents"] = to_cents(kwargs["saved"], label="Saved amount")
+        elif "saved_cents" in kwargs and "saved" not in kwargs:
+            kwargs["saved"] = legacy_float(int(kwargs["saved_cents"]))
+        super().__init__(**kwargs)
 
     def set_target_cents(self, cents: int):
         self.target_cents = int(cents)
