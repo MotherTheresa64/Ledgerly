@@ -67,6 +67,10 @@ def verify_bearer_token():
     test_claims = _test_claims(token)
     if test_claims:
         return test_claims
+    # Unit tests use explicit test-firebase tokens and should not need live Admin
+    # credentials merely to verify that an arbitrary bearer value is rejected.
+    if current_app.testing:
+        return None
 
     _firebase_app()
     return firebase_auth.verify_id_token(token, check_revoked=True)
