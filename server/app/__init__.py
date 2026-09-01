@@ -191,13 +191,16 @@ def create_app(test_config=None):
 
         if request.path.startswith("/api/") and request.method in {"POST", "PUT", "PATCH"} and request.is_json:
             payload = request.get_json(silent=True)
-            money_error = invalid_money_value(payload)
-            if money_error:
-                return jsonify({"error": money_error}), 400
-            if request.path.startswith("/api/transactions") or request.path.startswith("/api/transfers"):
-                text_error = oversized_transaction_text(payload)
-                if text_error:
-                    return jsonify({"error": text_error}), 400
+            # CSV import deliberately validates row-by-row so allowPartial can skip bad
+            # rows instead of having a single malformed row abort the entire request.
+            if request.path != "/api/transactions/import":
+                money_error = invalid_money_value(payload)
+                if money_error:
+                    return jsonify({"error": money_error}), 400
+                if request.path.startswith("/api/transactions") or request.path.startswith("/api/transfers"):
+                    text_error = oversized_transaction_text(payload)
+                    if text_error:
+                        return jsonify({"error": text_error}), 400
         return None
 
     @app.after_request
@@ -228,15 +231,15 @@ def create_app(test_config=None):
         return jsonify({"error": message}), error.code
 
     @app.errorhandler(SQLAlchemyError)
-    def database_error(error):
+    def database_error(_error):
         db.session.rollback()
-        app.logger.exception("Database operation failed", exc_info=error)
+        app.logger.exception("Database operation failed")
         return jsonify({"error": "Ledgerly could not complete the database operation. Please try again."}), 500
 
     @app.errorhandler(Exception)
-    def unexpected_error(error):
+    def unexpected_error(_error):
         db.session.rollback()
-        app.logger.exception("Unhandled API error", exc_info=error)
+        app.logger.exception("Unhandled API error")
         return jsonify({"error": "Ledgerly encountered an unexpected error. Please try again."}), 500
 
     with app.app_context():
