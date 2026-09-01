@@ -8,12 +8,22 @@ from sqlalchemy import func
 from .extensions import db
 from .firebase_auth import firebase_required, get_jwt_identity
 from .models import Budget, FinancialAccount, Goal, Transaction, User
-from .money import MAX_MONEY_CENTS, MoneyValidationError, cents_to_dollars, percent, to_cents
+from .money import (
+    MAX_MONEY_CENTS,
+    MoneyValidationError,
+    cents_to_dollars,
+    percent,
+    to_cents,
+)
 
 api = Blueprint("api", __name__, url_prefix="/api")
 MAX_IMPORT_ROWS = 1000
 ACCOUNT_TYPES = {"checking", "savings", "cash", "credit", "loan", "investment", "other"}
 TRANSACTION_TYPES = {"income", "expense", "transfer"}
+
+
+def utc_today():
+    return datetime.now(UTC).date()
 
 
 def current_user_id():
@@ -26,7 +36,7 @@ def current_user():
 
 def parse_iso_date(value, *, label="Date"):
     try:
-        parsed = datetime.strptime(str(value), "%Y-%m-%d").date()
+        parsed = date.fromisoformat(str(value))
     except (TypeError, ValueError):
         raise ValueError(f"{label} must use YYYY-MM-DD.") from None
     if parsed.year < 1900:
@@ -37,12 +47,12 @@ def parse_iso_date(value, *, label="Date"):
 def request_as_of_date():
     raw = request.args.get("asOf")
     if not raw:
-        return date.today()
+        return utc_today()
     return parse_iso_date(raw, label="asOf")
 
 
 def month_keys(count=6, as_of=None):
-    anchor = as_of or date.today()
+    anchor = as_of or utc_today()
     year, month = anchor.year, anchor.month
     items = []
     for _ in range(count):
@@ -55,8 +65,12 @@ def month_keys(count=6, as_of=None):
 
 
 def current_month_bounds(as_of=None):
-    anchor = as_of or date.today()
-    return date(anchor.year, anchor.month, 1), date(anchor.year, anchor.month, monthrange(anchor.year, anchor.month)[1])
+    anchor = as_of or utc_today()
+    return date(anchor.year, anchor.month, 1), date(
+        anchor.year,
+        anchor.month,
+        monthrange(anchor.year, anchor.month)[1],
+    )
 
 
 def normalize_transaction_type(value, amount_cents):
@@ -142,15 +156,18 @@ def monthly_trend(transactions, as_of=None):
     result = []
     for year, month in month_keys(6, as_of):
         items = [
-            item for item in transactions
+            item
+            for item in transactions
             if item.date.year == year and item.date.month == month and item.transaction_type != "transfer"
         ]
         income_cents = sum(
-            item.amount_cents for item in items
+            item.amount_cents
+            for item in items
             if item.transaction_type == "income" or (not item.transaction_type and item.amount_cents > 0)
         )
         expense_cents = abs(sum(
-            item.amount_cents for item in items
+            item.amount_cents
+            for item in items
             if item.transaction_type == "expense" or (not item.transaction_type and item.amount_cents < 0)
         ))
         result.append({
@@ -291,12 +308,15 @@ def budget_rows(uid, as_of=None):
         Transaction.date >= start,
         Transaction.date <= end,
     ).group_by(Transaction.category).all()
-    spending = {category: int(total or 0) for category, total in spending_rows}
+    spending = {}
+    for category, total in spending_rows:
+        key = str(category).casefold()
+        spending[key] = spending.get(key, 0) + int(total or 0)
 
     result = []
     for budget in budgets:
         limit_cents = int(budget.limit_cents or 0)
-        spent_cents = spending.get(budget.category, 0)
+        spent_cents = spending.get(budget.category.casefold(), 0)
         percent_used = percent(spent_cents, limit_cents) if limit_cents else 0.0
         status = "over" if percent_used >= 100 else "approaching" if percent_used >= 80 else "healthy"
         result.append({
@@ -326,7 +346,10 @@ def build_insights(month_income_cents, month_expense_cents, categories_cents, bu
     insights = []
     if categories_cents:
         top_category, top_cents = max(categories_cents.items(), key=lambda item: item[1])
-        insights.append(f"{top_category} is your largest spending category this month at ${cents_to_dollars(top_cents):,.2f}.")
+        insights.append(
+            f"{top_category} is your largest spending category this month at "
+            f"${cents_to_dollars(top_cents):,.2f}."
+        )
     approaching = [item for item in budgets if item["status"] == "approaching"]
     over = [item for item in budgets if item["status"] == "over"]
     if over:
@@ -351,7 +374,17 @@ def build_insights(month_income_cents, month_expense_cents, categories_cents, bu
     return insights[:4]
 
 
-def create_account_record(uid, *, name, account_type, institution="", opening_cents=0, description="", include_in_totals=True, archived=False):
+def create_account_record(
+    uid,
+    *,
+    name,
+    account_type,
+    institution="",
+    opening_cents=0,
+    description="",
+    include_in_totals=True,
+    archived=False,
+):
     item = FinancialAccount(
         user_id=uid,
         name=name,
@@ -380,7 +413,16 @@ def create_budget_record(uid, *, category, limit_cents):
 
 
 def create_goal_record(uid, *, name, target_cents, saved_cents=0, target_date=None, notes=""):
-    item = Goal(user_id=uid, name=name, target=0, target_cents=0, saved=0, saved_cents=0, target_date=target_date, notes=notes)
+    item = Goal(
+        user_id=uid,
+        name=name,
+        target=0,
+        target_cents=0,
+        saved=0,
+        saved_cents=0,
+        target_date=target_date,
+        notes=notes,
+    )
     item.set_target_cents(target_cents)
     item.set_saved_cents(saved_cents)
     return item
@@ -425,7 +467,7 @@ def seed_user(uid, as_of=None):
                 notes=notes,
             ))
 
-    current = as_of or date.today()
+    current = as_of or utc_today()
     extras = [
         ("Freelance project", 145_000, "income", "Income", "One-off client work"),
         ("Fuel", -9_670, "expense", "Fuel", "Vehicle fuel"),
@@ -470,17 +512,40 @@ def seed_user(uid, as_of=None):
             transfer_group=group,
         ),
     ])
-    for category, limit_cents in [("Groceries", 50_000), ("Fuel", 25_000), ("Subscriptions", 15_000), ("Utilities", 35_000)]:
+    for category, limit_cents in [
+        ("Groceries", 50_000),
+        ("Fuel", 25_000),
+        ("Subscriptions", 15_000),
+        ("Utilities", 35_000),
+    ]:
         db.session.add(create_budget_record(uid, category=category, limit_cents=limit_cents))
     db.session.add_all([
-        create_goal_record(uid, name="Emergency fund", target_cents=600_000, saved_cents=245_000, notes="Six months of essential expenses"),
-        create_goal_record(uid, name="Weekend trip", target_cents=120_000, saved_cents=48_000, notes="Travel and lodging"),
+        create_goal_record(
+            uid,
+            name="Emergency fund",
+            target_cents=600_000,
+            saved_cents=245_000,
+            notes="Six months of essential expenses",
+        ),
+        create_goal_record(
+            uid,
+            name="Weekend trip",
+            target_cents=120_000,
+            saved_cents=48_000,
+            notes="Travel and lodging",
+        ),
     ])
 
 
 @api.get("/health")
 def health():
-    return {"status": "ok", "service": "ledgerly-api", "version": "1.3.0", "auth": "firebase", "moneyStorage": "integer-cents"}
+    return {
+        "status": "ok",
+        "service": "ledgerly-api",
+        "version": "1.3.0",
+        "auth": "firebase",
+        "moneyStorage": "integer-cents",
+    }
 
 
 @api.get("/account")
@@ -518,7 +583,10 @@ def accounts():
     uid = current_user_id()
     if request.method == "GET":
         movements, counts = account_activity(uid)
-        items = FinancialAccount.query.filter_by(user_id=uid).order_by(FinancialAccount.archived.asc(), FinancialAccount.name.asc()).all()
+        items = FinancialAccount.query.filter_by(user_id=uid).order_by(
+            FinancialAccount.archived.asc(),
+            FinancialAccount.name.asc(),
+        ).all()
         return jsonify([serialize_account(item, movements, counts) for item in items])
 
     parsed, error = parse_account_payload(request.get_json(silent=True) or {})
@@ -575,7 +643,10 @@ def delete_financial_account(account_id):
             "transactionCount": transaction_count,
         }, 409
     if transaction_count:
-        Transaction.query.filter_by(user_id=uid, account_id=item.id).update({"account_id": None}, synchronize_session=False)
+        Transaction.query.filter_by(user_id=uid, account_id=item.id).update(
+            {"account_id": None},
+            synchronize_session=False,
+        )
     db.session.delete(item)
     db.session.commit()
     return {"deleted": account_id, "detachedTransactions": transaction_count}
@@ -594,15 +665,20 @@ def dashboard():
     movements, counts = account_activity(uid)
     account_items = sorted(accounts_by_id.values(), key=lambda item: (item.archived, item.name.lower()))
     accounts_serialized = [serialize_account(item, movements, counts) for item in account_items]
-    transactions = Transaction.query.filter_by(user_id=uid).order_by(Transaction.date.desc(), Transaction.id.desc()).all()
+    transactions = Transaction.query.filter_by(user_id=uid).order_by(
+        Transaction.date.desc(),
+        Transaction.id.desc(),
+    ).all()
     start, end = current_month_bounds(as_of)
     month_items = [item for item in transactions if start <= item.date <= end and item.transaction_type != "transfer"]
     month_income_cents = sum(
-        item.amount_cents for item in month_items
+        item.amount_cents
+        for item in month_items
         if item.transaction_type == "income" or (not item.transaction_type and item.amount_cents > 0)
     )
     month_expense_cents = abs(sum(
-        item.amount_cents for item in month_items
+        item.amount_cents
+        for item in month_items
         if item.transaction_type == "expense" or (not item.transaction_type and item.amount_cents < 0)
     ))
 
@@ -617,26 +693,36 @@ def dashboard():
     else:
         total_balance_cents = sum(item.amount_cents for item in transactions)
 
-    categories_cents = {}
+    category_totals = {}
+    category_labels = {}
     for item in month_items:
         if item.transaction_type == "expense" or (not item.transaction_type and item.amount_cents < 0):
-            categories_cents[item.category] = categories_cents.get(item.category, 0) + abs(item.amount_cents)
+            key = item.category.casefold()
+            category_labels.setdefault(key, item.category)
+            category_totals[key] = category_totals.get(key, 0) + abs(item.amount_cents)
+    categories_cents = {category_labels[key]: amount for key, amount in category_totals.items()}
 
     budget_internal = budget_rows(uid, as_of)
     budgets_public = [public_budget(row) for row in budget_internal]
     goals = Goal.query.filter_by(user_id=uid).order_by(Goal.id.desc()).all()
-    budget_categories = {item["category"] for item in budget_internal}
-    unbudgeted_spending_cents = sum(amount for category, amount in categories_cents.items() if category not in budget_categories)
+    budget_categories = {item["category"].casefold() for item in budget_internal}
+    unbudgeted_spending_cents = sum(
+        amount for key, amount in category_totals.items() if key not in budget_categories
+    )
     budget_remaining_cents = sum(item["_remainingCents"] for item in budget_internal)
     net_cash_flow_cents = month_income_cents - month_expense_cents
     savings_rate = percent(net_cash_flow_cents, month_income_cents) if month_income_cents else 0.0
     actual_expense_categories = sorted(
-        ({"category": key, "amount": cents_to_dollars(value)} for key, value in categories_cents.items()),
+        (
+            {"category": category_labels[key], "amount": cents_to_dollars(value)}
+            for key, value in category_totals.items()
+        ),
         key=lambda item: item["amount"],
         reverse=True,
     )[:12]
     savings_contribution_cents = sum(
-        item.amount_cents for item in transactions
+        item.amount_cents
+        for item in transactions
         if start <= item.date <= end
         and item.transaction_type == "transfer"
         and item.amount_cents > 0
@@ -672,7 +758,13 @@ def dashboard():
             "netResult": cents_to_dollars(net_cash_flow_cents),
             "daysRemaining": days_remaining,
         },
-        "insights": build_insights(month_income_cents, month_expense_cents, categories_cents, budgets_public, goals),
+        "insights": build_insights(
+            month_income_cents,
+            month_expense_cents,
+            categories_cents,
+            budgets_public,
+            goals,
+        ),
     }
 
 
@@ -682,7 +774,10 @@ def transactions():
     uid = current_user_id()
     if request.method == "GET":
         accounts_by_id = account_map(uid)
-        items = Transaction.query.filter_by(user_id=uid).order_by(Transaction.date.desc(), Transaction.id.desc()).all()
+        items = Transaction.query.filter_by(user_id=uid).order_by(
+            Transaction.date.desc(),
+            Transaction.id.desc(),
+        ).all()
         return jsonify([serialize_transaction(item, accounts_by_id) for item in items])
 
     parsed, error = parse_transaction_payload(request.get_json(silent=True) or {}, uid)
@@ -752,7 +847,10 @@ def create_transfer():
     accounts_by_id = {source.id: source, destination.id: destination}
     return {
         "transferGroup": group,
-        "transactions": [serialize_transaction(outgoing, accounts_by_id), serialize_transaction(incoming, accounts_by_id)],
+        "transactions": [
+            serialize_transaction(outgoing, accounts_by_id),
+            serialize_transaction(incoming, accounts_by_id),
+        ],
     }, 201
 
 
@@ -773,7 +871,13 @@ def import_transactions():
 
     existing = Transaction.query.filter_by(user_id=uid).all()
     fingerprints = {
-        (item.description.strip().lower(), item.amount_cents, item.category.strip().lower(), item.date.isoformat(), item.account_id)
+        (
+            item.description.strip().lower(),
+            item.amount_cents,
+            item.category.strip().lower(),
+            item.date.isoformat(),
+            item.account_id,
+        )
         for item in existing
     }
     parsed_rows, invalid_rows, duplicate_rows = [], [], []
@@ -801,7 +905,10 @@ def import_transactions():
     if invalid_rows and not allow_partial:
         preview = ", ".join(str(index) for index in invalid_rows[:10])
         suffix = "…" if len(invalid_rows) > 10 else ""
-        return {"error": f"Invalid transaction data on row(s): {preview}{suffix}", "invalidRows": invalid_rows}, 400
+        return {
+            "error": f"Invalid transaction data on row(s): {preview}{suffix}",
+            "invalidRows": invalid_rows,
+        }, 400
 
     for parsed in parsed_rows:
         amount_cents = parsed.pop("amount_cents")
@@ -821,7 +928,9 @@ def update_transaction(transaction_id):
     uid = current_user_id()
     item = Transaction.query.filter_by(id=transaction_id, user_id=uid).first_or_404()
     if item.transaction_type == "transfer" or item.transfer_group:
-        return {"error": "Transfers are paired entries. Delete and recreate the transfer instead of editing one side."}, 409
+        return {
+            "error": "Transfers are paired entries. Delete and recreate the transfer instead of editing one side."
+        }, 409
     parsed, error = parse_transaction_payload(request.get_json(silent=True) or {}, uid)
     if not parsed:
         return {"error": error}, 400
@@ -842,7 +951,11 @@ def delete_transaction(transaction_id):
         group = item.transfer_group
         deleted = Transaction.query.filter_by(user_id=uid, transfer_group=group).delete(synchronize_session=False)
         db.session.commit()
-        return {"deleted": transaction_id, "deletedTransferEntries": deleted, "transferGroup": group}
+        return {
+            "deleted": transaction_id,
+            "deletedTransferEntries": deleted,
+            "transferGroup": group,
+        }
     db.session.delete(item)
     db.session.commit()
     return {"deleted": transaction_id}
@@ -862,7 +975,12 @@ def budgets():
     payload = request.get_json(silent=True) or {}
     try:
         category = str(payload["category"]).strip()
-        limit_cents = to_cents(payload["limit"], label="Monthly budget", allow_zero=False, allow_negative=False)
+        limit_cents = to_cents(
+            payload["limit"],
+            label="Monthly budget",
+            allow_zero=False,
+            allow_negative=False,
+        )
     except KeyError:
         return {"error": "Category and a positive limit are required."}, 400
     except MoneyValidationError as error:
@@ -875,11 +993,14 @@ def budgets():
         func.lower(Budget.category) == category.lower(),
     ).first()
     if existing:
-        existing.category = category
         existing.set_limit_cents(limit_cents)
         budget, status = existing, 200
     else:
-        budget, status = create_budget_record(uid, category=category, limit_cents=limit_cents), 201
+        budget, status = create_budget_record(
+            uid,
+            category=category,
+            limit_cents=limit_cents,
+        ), 201
         db.session.add(budget)
     db.session.commit()
     return next(item for item in budget_payload(uid, as_of) if item["id"] == budget.id), status
@@ -892,7 +1013,12 @@ def update_budget(budget_id):
     budget = Budget.query.filter_by(id=budget_id, user_id=uid).first_or_404()
     payload = request.get_json(silent=True) or {}
     try:
-        limit_cents = to_cents(payload["limit"], label="Monthly budget", allow_zero=False, allow_negative=False)
+        limit_cents = to_cents(
+            payload["limit"],
+            label="Monthly budget",
+            allow_zero=False,
+            allow_negative=False,
+        )
         as_of = request_as_of_date()
     except KeyError:
         return {"error": "A positive limit is required."}, 400
@@ -917,13 +1043,25 @@ def delete_budget(budget_id):
 def goals():
     uid = current_user_id()
     if request.method == "GET":
-        return jsonify([serialize_goal(goal) for goal in Goal.query.filter_by(user_id=uid).order_by(Goal.id.desc()).all()])
+        return jsonify([
+            serialize_goal(goal)
+            for goal in Goal.query.filter_by(user_id=uid).order_by(Goal.id.desc()).all()
+        ])
 
     payload = request.get_json(silent=True) or {}
     try:
         name = str(payload["name"]).strip()
-        target_cents = to_cents(payload["target"], label="Goal target", allow_zero=False, allow_negative=False)
-        saved_cents = to_cents(payload.get("saved", 0), label="Saved amount", allow_negative=False)
+        target_cents = to_cents(
+            payload["target"],
+            label="Goal target",
+            allow_zero=False,
+            allow_negative=False,
+        )
+        saved_cents = to_cents(
+            payload.get("saved", 0),
+            label="Saved amount",
+            allow_negative=False,
+        )
         notes = str(payload.get("notes", "") or "").strip()
         target_date = parse_iso_date(payload["targetDate"], label="Target date") if payload.get("targetDate") else None
     except KeyError:
@@ -931,7 +1069,9 @@ def goals():
     except (MoneyValidationError, ValueError) as error:
         return {"error": str(error)}, 400
     if not name or len(name) > 120 or len(notes) > 2000:
-        return {"error": "Goal name must be 1–120 characters and notes cannot exceed 2,000 characters."}, 400
+        return {
+            "error": "Goal name must be 1–120 characters and notes cannot exceed 2,000 characters."
+        }, 400
 
     goal = create_goal_record(
         uid,
@@ -954,12 +1094,23 @@ def update_goal(goal_id):
     try:
         name = str(payload.get("name", goal.name)).strip()
         target_cents = (
-            to_cents(payload["target"], label="Goal target", allow_zero=False, allow_negative=False)
-            if "target" in payload else int(goal.target_cents)
+            to_cents(
+                payload["target"],
+                label="Goal target",
+                allow_zero=False,
+                allow_negative=False,
+            )
+            if "target" in payload
+            else int(goal.target_cents)
         )
         saved_cents = (
-            to_cents(payload["saved"], label="Saved amount", allow_negative=False)
-            if "saved" in payload else int(goal.saved_cents)
+            to_cents(
+                payload["saved"],
+                label="Saved amount",
+                allow_negative=False,
+            )
+            if "saved" in payload
+            else int(goal.saved_cents)
         )
         notes = str(payload.get("notes", goal.notes or "") or "").strip()
         target_date = (
@@ -970,7 +1121,9 @@ def update_goal(goal_id):
     except (MoneyValidationError, ValueError) as error:
         return {"error": str(error)}, 400
     if not name or len(name) > 120 or len(notes) > 2000:
-        return {"error": "Goal name must be 1–120 characters and notes cannot exceed 2,000 characters."}, 400
+        return {
+            "error": "Goal name must be 1–120 characters and notes cannot exceed 2,000 characters."
+        }, 400
 
     goal.name = name
     goal.target_date = target_date
@@ -987,7 +1140,12 @@ def contribute_goal(goal_id):
     goal = Goal.query.filter_by(id=goal_id, user_id=current_user_id()).first_or_404()
     payload = request.get_json(silent=True) or {}
     try:
-        contribution_cents = to_cents(payload["amount"], label="Contribution", allow_zero=False, allow_negative=False)
+        contribution_cents = to_cents(
+            payload["amount"],
+            label="Contribution",
+            allow_zero=False,
+            allow_negative=False,
+        )
     except KeyError:
         return {"error": "A positive contribution is required."}, 400
     except MoneyValidationError as error:
@@ -1024,10 +1182,16 @@ def export_data():
         "accounts": [serialize_account(item, movements, counts) for item in accounts_by_id.values()],
         "transactions": [
             serialize_transaction(item, accounts_by_id)
-            for item in Transaction.query.filter_by(user_id=uid).order_by(Transaction.date.desc(), Transaction.id.desc()).all()
+            for item in Transaction.query.filter_by(user_id=uid).order_by(
+                Transaction.date.desc(),
+                Transaction.id.desc(),
+            ).all()
         ],
         "budgets": budget_payload(uid, as_of),
-        "goals": [serialize_goal(goal) for goal in Goal.query.filter_by(user_id=uid).order_by(Goal.id.desc()).all()],
+        "goals": [
+            serialize_goal(goal)
+            for goal in Goal.query.filter_by(user_id=uid).order_by(Goal.id.desc()).all()
+        ],
     }
 
 
