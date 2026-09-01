@@ -1,6 +1,9 @@
 from datetime import UTC, date, datetime
+
 from werkzeug.security import generate_password_hash
+
 from .extensions import db
+from .money import cents_to_dollars, legacy_float
 
 
 class User(db.Model):
@@ -27,11 +30,18 @@ class FinancialAccount(db.Model):
     name = db.Column(db.String(120), nullable=False)
     account_type = db.Column(db.String(32), nullable=False, default="checking", index=True)
     institution = db.Column(db.String(120), nullable=True)
+    # `opening_balance` is retained as a compatibility mirror for existing deployments.
+    # `opening_balance_cents` is the canonical value used by all application logic.
     opening_balance = db.Column(db.Float, nullable=False, default=0)
+    opening_balance_cents = db.Column(db.BigInteger, nullable=False, default=0)
     description = db.Column(db.String(500), nullable=True)
     include_in_totals = db.Column(db.Boolean, nullable=False, default=True)
     archived = db.Column(db.Boolean, nullable=False, default=False, index=True)
     created_at = db.Column(db.DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
+
+    def set_opening_balance_cents(self, cents: int):
+        self.opening_balance_cents = int(cents)
+        self.opening_balance = legacy_float(cents)
 
 
 class Transaction(db.Model):
@@ -39,7 +49,9 @@ class Transaction(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
     account_id = db.Column(db.Integer, db.ForeignKey("financial_account.id"), nullable=True, index=True)
     description = db.Column(db.String(180), nullable=False)
+    # `amount` is a compatibility mirror. `amount_cents` is authoritative.
     amount = db.Column(db.Float, nullable=False)
+    amount_cents = db.Column(db.BigInteger, nullable=False, default=0)
     transaction_type = db.Column(db.String(16), nullable=False, default="expense", index=True)
     category = db.Column(db.String(80), nullable=False, index=True)
     subcategory = db.Column(db.String(80), nullable=True)
@@ -48,12 +60,17 @@ class Transaction(db.Model):
     date = db.Column(db.Date, default=date.today, nullable=False, index=True)
     notes = db.Column(db.Text)
 
+    def set_amount_cents(self, cents: int):
+        self.amount_cents = int(cents)
+        self.amount = legacy_float(cents)
+
     def to_dict(self, account_name=None):
+        amount = cents_to_dollars(self.amount_cents)
         return {
             "id": self.id,
             "description": self.description,
-            "amount": self.amount,
-            "transactionType": self.transaction_type or ("income" if self.amount >= 0 else "expense"),
+            "amount": amount,
+            "transactionType": self.transaction_type or ("income" if self.amount_cents >= 0 else "expense"),
             "accountId": self.account_id,
             "accountName": account_name,
             "category": self.category,
@@ -69,14 +86,31 @@ class Budget(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
     category = db.Column(db.String(80), nullable=False)
+    # `limit` is a compatibility mirror. `limit_cents` is authoritative.
     limit = db.Column(db.Float, nullable=False)
+    limit_cents = db.Column(db.BigInteger, nullable=False, default=0)
+
+    def set_limit_cents(self, cents: int):
+        self.limit_cents = int(cents)
+        self.limit = legacy_float(cents)
 
 
 class Goal(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
     name = db.Column(db.String(120), nullable=False)
+    # Legacy FLOAT mirrors are kept through the migration window.
     target = db.Column(db.Float, nullable=False)
+    target_cents = db.Column(db.BigInteger, nullable=False, default=0)
     saved = db.Column(db.Float, default=0, nullable=False)
+    saved_cents = db.Column(db.BigInteger, default=0, nullable=False)
     target_date = db.Column(db.Date, nullable=True)
     notes = db.Column(db.Text, nullable=True)
+
+    def set_target_cents(self, cents: int):
+        self.target_cents = int(cents)
+        self.target = legacy_float(cents)
+
+    def set_saved_cents(self, cents: int):
+        self.saved_cents = int(cents)
+        self.saved = legacy_float(cents)
