@@ -191,9 +191,10 @@ def create_app(test_config=None):
 
         if request.path.startswith("/api/") and request.method in {"POST", "PUT", "PATCH"} and request.is_json:
             payload = request.get_json(silent=True)
-            # CSV import deliberately validates row-by-row so allowPartial can skip bad
-            # rows instead of having a single malformed row abort the entire request.
-            if request.path != "/api/transactions/import":
+            partial_import = request.path == "/api/transactions/import" and isinstance(payload, dict) and payload.get("allowPartial") is True
+            # Partial CSV import validates each row independently so malformed rows can
+            # be reported/skipped. Atomic imports retain request-level precise errors.
+            if not partial_import:
                 money_error = invalid_money_value(payload)
                 if money_error:
                     return jsonify({"error": money_error}), 400
