@@ -1,201 +1,245 @@
 # Ledgerly architecture
 
-## Overview
+## System overview
 
-Ledgerly is a full-stack monorepo with a React/TypeScript SPA, Firebase Authentication, a Flask REST API, and PostgreSQL persistence:
+Ledgerly is a full-stack monorepo with four clear responsibility boundaries:
 
-- `client/` — product UI, Firebase browser authentication, client-side interaction state, CSV helpers, and typed API access
-- Firebase Authentication — registration, login, email verification, password recovery, and credential lifecycle
-- `server/` — Firebase ID-token verification, finance-domain validation, persistence, analytics, and account-data APIs
-- `server/app/firebase_auth.py` — Firebase Admin verification and Firebase UID → Ledgerly user mapping
-- `server/app/models.py` — relational finance-domain models
-- `server/app/routes.py` — user-scoped REST endpoints and derived finance read models
-- `server/tests/` — API, security, ownership, account, import, and CRUD tests
-- `.github/workflows/ci.yml` — frontend dependency audit/typecheck/build plus backend tests on Python 3.12 and 3.14
-- `render.yaml` — PostgreSQL, API, static frontend, and health-check deployment definition
+```text
+React / TypeScript SPA
+        │
+        ├── Firebase Web Authentication
+        │
+        └── HTTPS JSON + Firebase ID token
+                    │
+                    ▼
+              Flask API
+        ┌───────────┼────────────┐
+        │           │            │
+ Firebase Admin   finance      validation /
+ verification     services      calculations
+        │           │            │
+        └───────────┴─────┬──────┘
+                          ▼
+                    PostgreSQL
+```
+
+- `client/` owns presentation, interaction state, Firebase browser auth, CSV parsing/export, and typed HTTP calls.
+- Firebase owns credentials, email verification, password reset/change, and recent-login reauthentication.
+- `server/` owns authorization, finance-domain validation/calculation, persistence, destructive operations, and export.
+- PostgreSQL is the production source of truth for financial records; SQLite is supported for local development/tests.
+
+## Backend modules
+
+- `app/firebase_auth.py` — Firebase Admin initialization, token verification/revocation, verified-email enforcement, UID mapping, legacy-user linking, backend Firebase deletion.
+- `app/money.py` — fixed-precision money parsing/rounding/summation/serialization.
+- `app/models.py` — SQLAlchemy finance models using `NUMERIC(14,2)` for authoritative money.
+- `app/routes.py` — authenticated account, dashboard, transaction, transfer, import/export, budget, goal, demo, and destructive-data endpoints.
+- `app/config.py` — database/environment configuration.
+- `migrations/` — durable Alembic schema history.
+- `tests/` — auth/ownership/domain/migration/regression tests.
+
+## Frontend modules
+
+`App.tsx` remains the primary product surface. Focused modules isolate cross-cutting behavior instead of making that component larger:
+
+- `api.ts` — authenticated API client, timeouts, malformed-response handling, mutation guardrails.
+- `mobileNavigation.ts` — accessible phone navigation state.
+- `transactionPagination.ts` — desktop numbered pagination and compact phone pagination.
+- `inputGuardrails.ts` — transaction text limits/counters.
+- `financialSemantics.ts` — compatibility label updates while the backend contract evolves from “balance” to net-worth/liquidity terminology.
+- `readiness.css` — final responsive, touch-target, overflow, focus, and reduced-motion hardening.
+- `ThemeSwitcher.tsx` / theme CSS — appearance without changing finance semantics.
 
 ## Identity boundary
 
 Firebase is the credential authority; Ledgerly is the finance-data authority.
 
-```text
-React browser app
-    │
-    ├── Firebase Authentication
-    │      ├── email/password registration
-    │      ├── sign-in
-    │      ├── verification email
-    │      ├── password reset
-    │      └── reauthentication/password change
-    │
-    └── current Firebase ID token
-               │ Authorization: Bearer ...
-               ▼
-          Flask API
-               │ Firebase Admin verifies token
-               │ resolves Firebase UID
-               ▼
-        internal Ledgerly User
-               │
-               ▼
-           PostgreSQL
-```
+On a protected request:
 
-The Flask API does not receive a user's Firebase login password. A verified Firebase token is converted into one internal Ledgerly user id, and that internal id is used for all finance ownership queries.
+1. the browser gets the current Firebase ID token;
+2. the Flask API verifies signature, expiry, project, and revocation state with Firebase Admin;
+3. production normally requires `email_verified=true`;
+4. the verified UID maps to one internal Ledgerly `User` row;
+5. routes derive the internal `user_id` from that authenticated mapping;
+6. finance queries include that internal user id server-side.
 
-## Identity mapping and migration
+No request payload may override the authenticated internal user id.
 
-`User.firebase_uid` stores the Firebase identity mapping.
+## Legacy Firebase migration
 
-On the first authenticated API call:
+A pre-Firebase Ledgerly account may be linked to a Firebase identity only when:
 
-1. Firebase Admin verifies the bearer token.
-2. Ledgerly reads `uid`, `email`, and `email_verified` from the verified claims.
-3. If `firebase_uid` already exists, that Ledgerly user is loaded.
-4. Otherwise, a pre-Firebase Ledgerly user with the same **verified** email can be linked to the Firebase UID, preserving existing transactions, budgets, goals, and account creation history.
-5. If no Ledgerly record exists, one is created.
+- Firebase has verified the bearer token;
+- the token contains a verified email;
+- an existing Ledgerly row has the same normalized email;
+- that row is not already linked to a different Firebase UID.
 
-A second Firebase UID cannot claim an email that has already been mapped to another Firebase UID.
+A Firebase UID whose email changes is updated only if the destination email is not already owned by another Ledgerly row. Database uniqueness failures are rolled back safely.
 
-The deployed database still contains a legacy non-null `password_hash` column from Ledgerly's first authentication implementation. New Firebase users receive a random unusable placeholder only to satisfy that historical schema constraint. The value is never used to authenticate.
+The historical non-null `password_hash` column remains for compatibility with existing databases. New Firebase users receive an unusable random placeholder; Ledgerly never authenticates against it.
 
 ## Domain model
 
-A `User` owns `Transaction`, `Budget`, and `Goal` records.
+### User
 
-- `Transaction` stores signed values: positive is income, negative is expense. The normal UI hides this storage detail behind explicit Income / Expense controls.
-- `Budget` stores one monthly limit per category. Spent and remaining amounts are derived from current-month expense transactions.
-- `Goal` stores a target amount and current saved amount. Contributions are applied through a dedicated authenticated endpoint.
+Owns all financial objects and stores the Firebase UID mapping.
 
-The application deliberately derives analytics from source records instead of persisting duplicate aggregates.
+### FinancialAccount
+
+Represents checking, savings, cash, credit, loan, investment, or other accounts. It stores an opening balance, archive state, include-in-totals choice, institution, and description.
+
+Credit/loan balances are liabilities and are negative internally. The API exposes a positive-form opening debt value for normal user input while returning signed current/net-worth contribution values.
+
+### Transaction
+
+Stores one signed cash-flow entry with optional account, subcategory, tags, notes, transfer group, and date.
+
+- income = positive
+- expense = negative
+- transfer = paired negative/positive entries
+
+### Budget
+
+Stores a monthly category limit. Spending is derived from current-month expense transactions with case/whitespace-normalized category matching.
+
+### Goal
+
+Stores target, saved amount, optional target date, and notes. Contributions update tracking progress only; they do not imply an account transfer.
+
+## Money boundary
+
+All authoritative monetary values use SQL `NUMERIC(14,2)` and Python `Decimal`. `server/app/money.py` performs cent quantization with `ROUND_HALF_UP`, finite/range validation, and Decimal summation.
+
+The JSON contract still uses JavaScript-friendly numbers, but conversion happens only after authoritative calculations are complete.
 
 ## Dashboard read model
 
-`GET /api/dashboard` returns the main product read model in one authenticated request:
+`GET /api/dashboard` returns one user-scoped read model with:
 
-- lifetime net balance
-- current-month income, expenses, and savings rate
-- current-month category spending
-- current-month budget progress and remaining amounts
-- complete transaction history
-- savings goals
-- six-month income / expense / net trend
+- net worth (`totalBalance` remains a compatibility alias)
+- liquid balance context
+- asset and liability totals
+- current-month income/expenses/net cash flow/savings rate
+- category spending
+- budgets and unbudgeted spending
+- account balances
+- transaction history
+- goal progress
+- six-month trend
+- monthly plan summary
+- derived insights
 
-This keeps finance calculations in one place and gives the React client a stable presentation contract.
+Transfers are excluded from income/expense calculations. Archived/excluded accounts are handled separately from active included totals.
 
-## Current-month semantics
+## Transfer integrity
 
-Ledgerly distinguishes between lifetime and monthly values:
+A transfer request requires two distinct active accounts owned by the caller. The API creates both entries under one UUID transfer group and performs an explicit flush + commit inside one SQLAlchemy transaction.
 
-- **Net balance** is the sum of all tracked transactions.
-- **Income, expenses, savings rate, category spending, and budget progress** are calculated for the active calendar month.
-- **Trend data** covers the current month plus the previous five months.
+If either insert/flush/commit fails, the session rolls back and the API reports that no transfer was saved.
 
-## API design
+Individual transfer entries cannot be edited. Deleting either side deletes all entries in its user-scoped transfer group. Accounts with historical transfers cannot be hard-deleted; they can be archived so the transfer ledger remains intelligible.
 
-Authentication endpoints are not implemented by Flask. Firebase's browser SDK owns registration/login/recovery and the Firebase Admin SDK protects the finance API.
+## Import model
 
-### Account data
+The browser parses CSV into typed transaction JSON. The server remains authoritative for validation.
 
-- `GET /api/account` returns the mapped Ledgerly account summary.
-- Password changes are performed by Firebase after reauthentication.
-- Account deletion reauthenticates with Firebase in the client, deletes Ledgerly finance/account data through the API, then deletes the Firebase user.
+The API supports:
 
-### Transactions
+- max 1,000 rows/request
+- an optional active default account
+- decimal parsing and cent rounding
+- normal transaction/account validation
+- normalized duplicate fingerprints
+- duplicate detection both against the database and earlier rows in the same request
+- **atomic mode** (default)
+- **partial mode** (explicit opt-in)
 
-- Create, list, update, and delete
-- Optional notes
-- Atomic validated bulk import (maximum 1,000 rows per request)
-- Every item lookup includes the authenticated internal `user_id`
+Settings deliberately opts into partial mode and communicates skipped invalid/duplicate rows. Other callers that omit `allowPartial` get atomic behavior.
 
-### Budgets
+## Export model
 
-- Create/upsert by category
-- Update limits
-- Delete
-- Current-month spent/remaining values are calculated at read time
+- browser CSV export covers transactions for convenient portability;
+- `GET /api/export` returns accounts, transactions, budgets, goals, export timestamp, schema version, and money-semantics metadata;
+- credentials, Firebase tokens, service-account material, and password placeholders are never exported.
 
-### Goals
+The JSON backup is currently an export/inspection artifact, not an automatic restore endpoint.
 
-- Create, update, delete
-- Direct positive contributions
-- Completion is derived from `saved >= target`
+## Destructive operations
 
-### Data tools
+### Clear finance data
 
-- Clear finance data while keeping the account
-- Seed a completely empty account with realistic sample data
-- Reset any account to the six-month sample dataset for evaluation
+`DELETE /api/data` requires explicit `CLEAR` confirmation and removes only the authenticated user's finance objects, not their identity.
 
-## Browser authentication behavior
+### Demo reset
 
-The browser persists Firebase Authentication through the Firebase SDK. Ledgerly also keeps a short-lived `ledgerly_token` marker for its existing top-level UI gate, but API authorization does not trust that stored marker.
+`POST /api/demo/reset` requires explicit `RESET` confirmation because it replaces current finance data with fictional sample records.
 
-Before every protected request, the API client waits for Firebase auth state to initialize and calls `getIdToken()` on the active Firebase user. That current token is sent as the bearer credential. If the API responds with `401`, the UI session marker is cleared and the user is returned to authentication.
+### Account deletion
 
-When the Ledgerly UI signs out, it clears its marker; the authentication screen then closes any verified Firebase persisted session so sign-out is complete.
+The client requires Firebase recent-login reauthentication. The API additionally requires `DELETE` confirmation and then:
 
-## Ownership and authorization
+1. deletes finance records;
+2. deletes the server-bound Firebase UID;
+3. deletes Ledgerly account metadata.
 
-Resource-level authorization is enforced server-side, not trusted to the UI. Transaction, budget, and goal updates/deletes query by both object ID and the internal Ledgerly user ID produced only after Firebase token verification. Tests explicitly verify that one Firebase identity cannot read, edit, or delete another user's records through guessed IDs.
+External partial failures are returned explicitly so the UI/support path can distinguish `dataDeleted`, `firebaseDeleted`, and `metadataDeleted` state.
 
-## Validation and import safety
+## Error behavior
 
-Mutation payloads are validated on the server for required fields, non-zero transaction amounts, positive budget/goal values, string length limits, and ISO dates.
+The client:
 
-CSV is parsed in the browser into the same typed transaction payload used by normal creation. The API validates **every** imported row before adding any row to the session. If any row is invalid, the entire import is rejected, providing all-or-nothing behavior.
+- refreshes the Firebase token through the SDK;
+- times requests out rather than hanging indefinitely;
+- distinguishes network/timeout/malformed API responses;
+- clears the UI session gate on `401`;
+- waits for successful API commits before displaying success.
 
-## Database strategy
+The API:
 
-`DATABASE_URL` controls persistence:
+- uses bounded request bodies;
+- validates JSON money/text input before route mutation;
+- rolls back database state on handled transaction failures and generic server errors;
+- avoids leaking Firebase credential/token details in errors/logs;
+- returns no-store financial JSON.
 
-- local development defaults to SQLite
-- production uses PostgreSQL
+## Schema evolution
 
-PostgreSQL connection strings supplied by hosting providers are normalized to the Psycopg SQLAlchemy driver in `config.py`.
+Alembic/Flask-Migrate is now the schema authority. The app no longer calls `db.create_all()` or executes ad-hoc `ALTER TABLE` statements during production startup.
 
-## Frontend product areas
+Revision `20260901_01` is adaptive so it can establish a fresh database or bring the previously startup-mutated Ledgerly schema under durable migration control. Render runs migrations before API startup.
 
-1. **Overview** — lifetime balance, monthly KPIs, six-month trend, spending mix, budget health, savings goals, and quick insights.
-2. **Transactions** — explicit income/expense creation, edit/delete, search, category/type/date filtering, sorting, and complete history.
-3. **Budgets** — category limits, live spend, remaining/over-limit states, edit/delete.
-4. **Goals** — CRUD, direct contributions, completion states, aggregate funding.
-5. **Settings** — account summary, Firebase-backed password change, CSV portability, demo/reset controls, finance-data clearing, and account deletion.
+See [`MONEY_AND_MIGRATIONS.md`](MONEY_AND_MIGRATIONS.md).
 
-## Data portability
+## Responsive/accessibility architecture
 
-CSV export is generated client-side from the currently loaded user transaction history, so no additional backend download endpoint is needed.
+Desktop keeps the sticky sidebar and data-rich layouts. As width decreases:
 
-CSV import supports quoted fields, escaped quotes, CRLF/LF line endings, optional notes, and required headers. The frontend converts the file to typed JSON and the server performs authoritative validation before persistence.
+- metrics and multi-column cards collapse progressively;
+- phone navigation becomes a controlled menu with `aria-expanded`, Escape support, and outside-click close;
+- form rows and filters become single-column;
+- transaction rows stack instead of creating horizontal tables;
+- phone pagination renders previous/current/next rather than every page button;
+- controls maintain touch-friendly heights;
+- long finance labels may wrap instead of forcing overflow;
+- visible focus remains available;
+- reduced-motion preference disables decorative transition/scroll animation.
 
-## UI system
+Financial status is also communicated in text (transaction type, budget status, labels), not solely by theme accent color.
 
-Ledgerly exposes five persistent themes:
+## Deployment
 
-- Midnight — default navy/blue
-- Emerald
-- Violet
-- Amber
-- Light
+Render hosts PostgreSQL, the Flask/Gunicorn API, and the Vite static frontend. Firebase remains the external identity provider.
 
-The theme layer changes surfaces and accent colors while keeping semantic income, expense, warning, and destructive states understandable. The layout moves from sticky desktop sidebar to bounded native-width mobile navigation. Forms include visible labels, focus-visible states, disabled states, and semantic/ARIA annotations where useful.
+API deploy order:
 
-## Deployment architecture
+```text
+install dependencies
+      ↓
+flask --app run.py db upgrade
+      ↓
+gunicorn run:app
+      ↓
+/api/health
+```
 
-Render hosts:
-
-- PostgreSQL database
-- Flask/Gunicorn API service
-- `/api/health` HTTP health check
-- React/Vite static frontend with SPA rewrite
-
-Firebase hosts/manages identity.
-
-Environment-specific values include:
-
-- API `CLIENT_ORIGIN` = deployed frontend origin
-- Frontend `VITE_API_URL` = deployed API URL plus `/api`
-- Firebase Web configuration on the static frontend
-- Firebase project id + protected service-account JSON on the API
-
-The deployed frontend domain must be included in Firebase Authentication's authorized domains. Privileged service-account credentials are supplied only through the backend deployment environment and are never committed.
+Production still requires correct Firebase Admin credentials, client Firebase Web config, `CLIENT_ORIGIN`, `VITE_API_URL`, and Firebase authorized domains.

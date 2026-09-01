@@ -4,6 +4,7 @@ services:
     runtime: python
     rootDir: server
     buildCommand: pip install -r requirements.txt
+    preDeployCommand: flask --app run.py db upgrade
     startCommand: gunicorn run:app
     healthCheckPath: /api/health
     envVars:

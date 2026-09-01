@@ -9,7 +9,7 @@ function signatureFor(rows: HTMLElement[]) {
   return rows.map(row => row.textContent || '').join('\u001f')
 }
 
-function visiblePageNumbers(page: number, totalPages: number) {
+export function visiblePageNumbers(page: number, totalPages: number) {
   if (totalPages <= 7) return Array.from({ length: totalPages }, (_, index) => index + 1)
 
   const pages = new Set<number>([1, totalPages, page - 1, page, page + 1])
@@ -22,7 +22,7 @@ function scrollHistoryIntoView() {
   const manager = document.querySelector<HTMLElement>('.transaction-manager')
   if (!manager) return
   const top = manager.getBoundingClientRect().top + window.scrollY - 12
-  window.scrollTo({ top, behavior: 'smooth' })
+  window.scrollTo({ top, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
 }
 
 function renderPagination(list: HTMLElement, totalPages: number) {
@@ -66,18 +66,27 @@ function renderPagination(list: HTMLElement, totalPages: number) {
 
   addButton('‹', currentPage - 1, { disabled: currentPage === 1, aria: 'Previous page' })
 
-  const pages = visiblePageNumbers(currentPage, totalPages)
-  let previous = 0
-  for (const page of pages) {
-    if (previous && page - previous > 1) {
-      const ellipsis = document.createElement('span')
-      ellipsis.className = 'pagination-ellipsis'
-      ellipsis.textContent = '…'
-      ellipsis.setAttribute('aria-hidden', 'true')
-      nav.appendChild(ellipsis)
+  const compactMobile = window.matchMedia('(max-width: 600px)').matches
+  if (compactMobile) {
+    const current = document.createElement('span')
+    current.className = 'pagination-mobile-current'
+    current.textContent = `${currentPage} / ${totalPages}`
+    current.setAttribute('aria-live', 'polite')
+    nav.appendChild(current)
+  } else {
+    const pages = visiblePageNumbers(currentPage, totalPages)
+    let previous = 0
+    for (const page of pages) {
+      if (previous && page - previous > 1) {
+        const ellipsis = document.createElement('span')
+        ellipsis.className = 'pagination-ellipsis'
+        ellipsis.textContent = '…'
+        ellipsis.setAttribute('aria-hidden', 'true')
+        nav.appendChild(ellipsis)
+      }
+      addButton(String(page), page, { active: page === currentPage, aria: `Page ${page}` })
+      previous = page
     }
-    addButton(String(page), page, { active: page === currentPage, aria: `Page ${page}` })
-    previous = page
   }
 
   addButton('›', currentPage + 1, { disabled: currentPage === totalPages, aria: 'Next page' })
@@ -129,4 +138,5 @@ export function installTransactionPagination() {
   schedulePagination()
   const observer = new MutationObserver(schedulePagination)
   observer.observe(document.body, { childList: true, subtree: true })
+  window.matchMedia('(max-width: 600px)').addEventListener('change', schedulePagination)
 }
