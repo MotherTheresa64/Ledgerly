@@ -12,6 +12,7 @@ import './guardrails.css'
 import './pagination.css'
 import './mobileNavigation.css'
 import './professional.css'
+import './showcase-design.css'
 
 installTransactionTextLimits()
 installTransactionPagination()

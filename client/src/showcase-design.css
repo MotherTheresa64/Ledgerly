@@ -1,0 +1,21 @@
+/* Portfolio visual direction: quiet, high-contrast finance workspace with emerald analytics. */
+:root,:root[data-theme='emerald']{
+  --bg:#030807;--panel:#07110f;--card:#0a1513;--card2:#10201c;--border:#1d332d;
+  --green:#35d6a0;--green2:#69e5b8;--text:#f5faf8;--muted:#92a8a0;--subtle:#627b72;
+  --theme-body-a:#0d624d55;--theme-body-b:#030807;--theme-brand-a:#1e8d6d24;--theme-brand-b:#06100e;
+  --theme-active:#0f2a22;--theme-input:#06100e;--theme-focus:#35d6a02d;
+  --theme-logo-a:#6ee7bd;--theme-logo-b:#20ad7d;--theme-logo-text:#03110c;
+}
+body{background:radial-gradient(circle at 91% -5%,#0b6e5429,transparent 28%),linear-gradient(180deg,#06100f,#030807 42%)}
+.sidebar{width:250px;padding:24px 16px;background:linear-gradient(180deg,#07110f,#050b0a);border-right-color:#193028}
+.app-shell{grid-template-columns:250px minmax(0,1fr)}
+.dashboard{padding:42px 46px 62px;max-width:1600px}
+.logo-mark{border:1px solid #325e50;background:linear-gradient(145deg,#0d2d25,#081612);color:#64dfb5;box-shadow:0 0 28px #35d6a01f}
+.sidebar nav button{min-height:43px;border-radius:10px}.sidebar nav button.active{background:linear-gradient(90deg,#10352b,#0d241e);border-color:#205240;color:#d9fff1}.sidebar nav button.active::before{background:#55deb0}
+.card,.metric,.auth-card{border-radius:14px;border-color:#1b312b;background:linear-gradient(145deg,#0b1714,#08110f);box-shadow:0 18px 46px #0005}
+.metric{min-height:128px}.metric strong,.hero-number{letter-spacing:-.045em}.card-head{border-color:#172b26}
+.primary{background:linear-gradient(135deg,#58dfb1,#2dbd8d);color:#03110c;box-shadow:0 10px 26px #31c99424}.primary:hover{background:linear-gradient(135deg,#72e9c0,#3ccf9e)}
+.secondary,input,select,textarea{border-radius:10px}.trend-chart .bar,.bar{background:linear-gradient(180deg,#62e3b6,#1f9f72)}
+.auth-shell{background:#030807}.brand-panel{background:radial-gradient(circle at 30% 20%,#0d795b35,transparent 30%),linear-gradient(145deg,#030807,#071310)}
+.theme-trigger{border-radius:12px}
+@media(max-width:600px){.app-shell{display:block}.sidebar{width:100%}.dashboard{padding:18px 14px 88px!important}.card,.metric{border-radius:13px}.theme-switcher{bottom:74px}}
