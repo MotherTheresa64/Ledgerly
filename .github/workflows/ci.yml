@@ -38,6 +38,9 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
-          cache-dependency-path: server/requirements.txt
-      - run: pip install -r requirements.txt
+          cache-dependency-path: |
+            server/requirements.txt
+            server/requirements-dev.txt
+      - run: pip install -r requirements-dev.txt
+      - run: ruff check app tests run.py
       - run: pytest -q
