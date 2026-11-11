@@ -1,8 +1,12 @@
-from datetime import date
+from datetime import UTC, datetime
 
 
 def firebase_headers(email, uid):
     return {"Authorization": f"Bearer test-firebase:{uid}:{email}"}
+
+
+def current_date():
+    return datetime.now(UTC).date().isoformat()
 
 
 def create_account(client, headers, name, account_type="checking", opening=0):
@@ -27,7 +31,7 @@ def test_accounts_affect_balances_and_are_private(client):
         "transactionType": "income",
         "accountId": checking["id"],
         "category": "Income",
-        "date": date.today().isoformat(),
+        "date": current_date(),
     })
     assert created.status_code == 201
 
@@ -45,7 +49,7 @@ def test_transfer_moves_balance_without_changing_cash_flow(client, auth_headers)
         "fromAccountId": checking["id"],
         "toAccountId": savings["id"],
         "amount": 250,
-        "date": date.today().isoformat(),
+        "date": current_date(),
         "description": "Monthly savings",
     })
     assert response.status_code == 201

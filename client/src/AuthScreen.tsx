@@ -7,7 +7,7 @@ import {
   signInWithEmailAndPassword,
   signOut,
 } from 'firebase/auth'
-import type { AuthSuccess } from './api'
+import { FIREBASE_SESSION_MARKER, type AuthSuccess } from './api'
 import { firebaseAuth } from './firebase'
 
 type AuthMode = 'login' | 'register' | 'forgot' | 'check-email'
@@ -44,7 +44,7 @@ function AuthScreen({ onAuthenticated, initialMessage = '' }: Props) {
         setMessage('Verify your email address, then continue into Ledgerly.')
         return
       }
-      // App.tsx clears Ledgerly's session marker when the user signs out. If Firebase
+      // App.tsx clears Ledgerly's non-sensitive session marker on sign-out. If Firebase
       // still has a verified persisted session, close it here so sign-out is complete.
       await signOut(firebaseAuth)
     })
@@ -60,9 +60,11 @@ function AuthScreen({ onAuthenticated, initialMessage = '' }: Props) {
       setMessage('Check your inbox and verify your email before continuing.')
       return
     }
-    const accessToken = await user.getIdToken(true)
-    localStorage.setItem('ledgerly_token', accessToken)
-    onAuthenticated({ accessToken, user: { email: user.email || '', emailVerified: true } })
+    // Force a fresh token into Firebase's own in-memory/persisted auth state, but never
+    // copy the bearer token into localStorage. Ledgerly stores only a harmless marker.
+    await user.getIdToken(true)
+    localStorage.setItem('ledgerly_token', FIREBASE_SESSION_MARKER)
+    onAuthenticated({ accessToken: FIREBASE_SESSION_MARKER, user: { email: user.email || '', emailVerified: true } })
   }
 
   const switchMode = (next: AuthMode) => {

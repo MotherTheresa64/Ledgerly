@@ -1,8 +1,12 @@
-from datetime import date
+from datetime import UTC, datetime
+
+
+def current_date():
+    return datetime.now(UTC).date().isoformat()
 
 
 def test_transaction_crud_updates_dashboard(client, auth_headers):
-    today = date.today().isoformat()
+    today = current_date()
     create = client.post("/api/transactions", headers=auth_headers, json={
         "description": "Paycheck", "amount": 2000, "category": "Income", "date": today, "notes": "Current pay"
     })
@@ -42,7 +46,7 @@ def test_rejects_oversized_transaction_amount(client, auth_headers):
         "description": "Impossible purchase",
         "amount": -1_000_000_000,
         "category": "Shopping",
-        "date": date.today().isoformat(),
+        "date": current_date(),
     })
     assert response.status_code == 400
     assert "999,999,999.99" in response.get_json()["error"]
@@ -54,7 +58,7 @@ def test_rejects_oversized_import_amount(client, auth_headers):
             "description": "Impossible import",
             "amount": 1_000_000_000,
             "category": "Income",
-            "date": date.today().isoformat(),
+            "date": current_date(),
         }]
     })
     assert response.status_code == 400
@@ -66,7 +70,7 @@ def test_rejects_oversized_transaction_description(client, auth_headers):
         "description": "x" * 81,
         "amount": -12.34,
         "category": "Shopping",
-        "date": date.today().isoformat(),
+        "date": current_date(),
     })
     assert response.status_code == 400
     assert "80 characters" in response.get_json()["error"]
@@ -77,7 +81,7 @@ def test_rejects_oversized_transaction_notes(client, auth_headers):
         "description": "Normal purchase",
         "amount": -12.34,
         "category": "Shopping",
-        "date": date.today().isoformat(),
+        "date": current_date(),
         "notes": "n" * 501,
     })
     assert response.status_code == 400
@@ -90,7 +94,7 @@ def test_rejects_oversized_import_text(client, auth_headers):
             "description": "x" * 81,
             "amount": -5,
             "category": "Other",
-            "date": date.today().isoformat(),
+            "date": current_date(),
             "notes": "valid",
         }]
     })

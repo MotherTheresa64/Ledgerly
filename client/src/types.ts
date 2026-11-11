@@ -82,6 +82,7 @@ export type MonthlyPlan = {
 }
 
 export type Dashboard = {
+  asOf: string
   totalBalance: number
   availableBalance: number
   income: number

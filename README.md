@@ -1,101 +1,120 @@
 # Ledgerly
 
-Ledgerly is a production-minded full-stack personal-finance application for tracking cash flow, managing monthly budgets, and building savings goals through a polished responsive dashboard.
+Ledgerly is a full-stack personal-finance application for understanding cash flow, tracking financial accounts and transactions, managing monthly budgets, and building savings goals through a responsive dashboard.
 
-## Consumer-ready v1 feature set
+It is intentionally a finance tracker rather than a bank. Ledgerly does not claim bank connectivity or fabricate account synchronization: users can work with their own manual data, import transactions, or load clearly fictional demo data.
 
-### Authentication and account lifecycle
-- Firebase Authentication for email/password registration and login
-- Firebase-managed email verification and password recovery
-- Firebase password policy and account security controls
-- Firebase ID tokens verified by the Flask API before protected finance data is accessed
-- Automatic Firebase UID mapping to Ledgerly's PostgreSQL user records
-- Safe migration path for pre-Firebase Ledgerly accounts by verified email
-- Firebase reauthentication before password changes and permanent account deletion
-- Strict user ownership checks on every protected finance resource
+## Features
 
 ### Financial overview
-- Lifetime net balance
-- Current-month income, expenses, and savings rate
-- Six-month income vs. expense cash-flow visualization
-- Current-month spending breakdown by category
-- Current-month budget health
+- Tracked balance across active accounts plus unassigned manual transactions
+- Current-month income, expenses, net cash flow, and savings rate
+- Six-month income-vs-expense trend
+- Spending breakdown by category
+- Monthly budget health and over-budget states
 - Savings-goal progress
-- Quick financial insights
-- Realistic six-month demo dataset for evaluation
+- Derived, factual insights based only on the user's Ledgerly data
+- Empty, loading, success, error, and populated demo states
+
+### Accounts and transfers
+- Checking, savings, cash, credit, loan/debt, investment-tracking, and custom accounts
+- Opening balances and live balances derived from account activity
+- Archive/include-in-total controls
+- Guarded account deletion when transactions still reference an account
+- Paired transfers between active accounts without inflating income or expenses
 
 ### Transactions
-- Create, edit, and delete transactions
-- Explicit Income / Expense selection so users never need to enter negative values manually
-- Controlled categories and optional notes
-- Search across description, category, and notes
-- Filter by category, type, and date range
-- Sort by date or transaction magnitude
-- CSV export
-- Validated, atomic CSV import of up to 1,000 transactions at a time
+- Create, edit, and delete income/expense transactions
+- Explicit transaction type so normal entry never requires users to reason about signed storage values
+- Account assignment, category, subcategory, tags, notes, and local calendar dates
+- Search, filters, sorting, and pagination
+- CSV import/export
+- Duplicate detection and optional partial import of valid rows
+- Paired-transfer deletion protection
 
-### Budgets
-- Create category budgets
-- Update and delete budgets
-- Live current-month spend calculations
-- Remaining and over-budget amounts
-- Clear visual over-limit states
+### Budgets and goals
+- Monthly category budgets derived from actual expense transactions
+- Remaining amount, percent used, approaching-limit, and over-limit states
+- Percentages remain numerically correct above 100%; the visual progress bar is intentionally capped at its container width
+- Savings goals with targets, saved amounts, target dates, notes, contributions, and completed states
 
-### Savings goals
-- Create, edit, and delete savings goals
-- Track target and saved amounts
-- Add contributions directly to active goals
-- Completion states and aggregate progress
+### Authentication and privacy
+- Firebase Authentication for email/password identity
+- Email verification and Firebase-managed password reset
+- Firebase ID tokens verified server-side with the Firebase Admin SDK
+- Server-side ownership checks on every protected finance resource
+- Firebase reauthentication before password changes and permanent account deletion
+- Bearer tokens are not copied into Ledgerly `localStorage`; the UI stores only a non-sensitive session marker while API requests obtain the active Firebase user's current token
+- Financial API JSON is marked `no-store`
 
-### Appearance and responsive UX
-- Desktop, tablet, and native-width mobile layouts
-- Mobile navigation that does not require pinch-zooming
-- Persistent theme preference stored locally in the browser
-- Midnight, Emerald, Violet, Amber, and Light themes
-- Semantic income/expense colors remain distinct from the chosen accent theme
-- Keyboard-visible focus states and semantic form labels
-- Loading, empty, error, success, over-budget, and completed-goal states
+### Responsive UX
+- Desktop, laptop, tablet, and phone layouts
+- Mobile navigation designed for touch rather than horizontal desktop navigation
+- Mobile-friendly transaction representation and controls
+- Persistent appearance themes
+- Visible keyboard focus states, semantic labels, accessible status/error messaging, and reduced-motion support where animation is used
 
-### Data controls
-- Export transaction history to CSV
-- Import transaction history from CSV
-- Clear all finance data without deleting the account
-- Replace current data with a fresh demo dataset
-- Permanently delete the Ledgerly account data and Firebase user
+## Financial correctness
+
+Money is stored and calculated as **integer cents** in canonical `BIGINT` columns:
+
+```text
+financial_account.opening_balance_cents
+transaction.amount_cents
+budget.limit_cents
+goal.target_cents
+goal.saved_cents
+```
+
+The API parses monetary input through Python `Decimal`, rejects `NaN`, `Infinity`, fractional cents, zero where not meaningful, and values above `$999,999,999.99`, then converts to exact integer cents. Aggregations, balances, budgets, percentages, transfers, imports, and dashboard calculations operate on those integer values.
+
+Legacy floating-point columns remain temporarily as synchronized compatibility mirrors so an existing Ledgerly database can upgrade in place. Application startup performs an additive schema migration and backfills cent columns from legacy values. New application logic does not use the float mirrors for financial calculations.
+
+## Date correctness
+
+Transaction dates are calendar dates (`YYYY-MM-DD`), not UTC timestamps. The browser sends its local calendar date as an `asOf` context for current-period dashboards, budgets, exports, and demo data so month boundaries are based on the user's local day rather than whichever timezone hosts the API.
+
+The API also supports an explicit `?asOf=YYYY-MM-DD` value, which makes month-boundary behavior deterministic and directly testable.
 
 ## Tech stack
 
 **Frontend:** React 18, TypeScript, Vite, Firebase Web SDK, CSS  
 **Backend:** Python, Flask, Flask-SQLAlchemy, Firebase Admin SDK  
-**Database:** PostgreSQL in production / SQLite locally  
+**Database:** PostgreSQL in production; SQLite for local development/tests  
 **Identity:** Firebase Authentication  
 **Testing:** pytest  
-**DevOps:** GitHub Actions, Dependabot, Render
+**CI/CD:** GitHub Actions, Dependabot, Render
 
-## Authentication architecture
+## Architecture
 
 ```text
-Browser
+Browser / React
   │
   ├── Firebase Authentication
-  │     ├── registration / login
-  │     ├── email verification
-  │     └── password reset
+  │     └── current Firebase ID token
   │
-  └── Firebase ID token
+  └── HTTPS JSON API
           │
           ▼
-      Flask API on Render
-          │ verifies token with Firebase Admin
-          │ maps Firebase UID → Ledgerly user
+      Flask API
+          │ verifies Firebase token + resolves Ledgerly user
+          │ validates domain input
+          │ performs exact-cent finance calculations
           ▼
-      PostgreSQL
-          ├── transactions
-          ├── budgets
-          └── goals
+      SQLAlchemy
+          │
+          ▼
+      PostgreSQL / SQLite
 ```
 
-Firebase owns credentials. Ledgerly never receives or stores a user's login password on the server. PostgreSQL remains the source of truth for financial data.
+Firebase is the credential authority. Ledgerly's database is the finance-data source of truth. The backend never trusts a client-supplied Ledgerly user id; authenticated ownership is derived from the verified Firebase identity.
+
+Important backend responsibilities are separated into:
+- `firebase_auth.py` — Firebase Admin verification and identity mapping
+- `money.py` — exact monetary parsing/conversion/percentage helpers
+- `models.py` — persisted domain records and legacy migration mirrors
+- `routes.py` — finance API workflows and aggregations
+- `__init__.py` — app setup, additive schema upgrades, CORS, safe error handling, request/response security controls
 
 ## Repository structure
 
@@ -105,34 +124,41 @@ Ledgerly/
 │   └── src/
 │       ├── App.tsx
 │       ├── AuthScreen.tsx
+│       ├── api.ts
+│       ├── date.ts
 │       ├── firebase.ts
 │       ├── ThemeSwitcher.tsx
-│       ├── api.ts
-│       ├── styles.css
-│       ├── consumer.css
-│       ├── themes.css
-│       └── types.ts
+│       ├── types.ts
+│       └── *.css / focused UI helpers
 ├── server/
 │   ├── app/
+│   │   ├── __init__.py
 │   │   ├── firebase_auth.py
+│   │   ├── money.py
 │   │   ├── models.py
-│   │   ├── routes.py
-│   │   └── config.py
+│   │   └── routes.py
 │   └── tests/
 ├── docs/
-│   ├── ARCHITECTURE.md
-│   ├── CONSUMER_READINESS.md
-│   └── FIREBASE_SETUP.md
 ├── SECURITY.md
 ├── render.yaml
 └── .github/workflows/ci.yml
 ```
 
-## Local development
+## Getting started
 
-### 1. Firebase
+### Prerequisites
+- Node.js 24 (matches CI)
+- Python 3.12+ (CI covers 3.12 and 3.14)
+- A Firebase project with Email/Password Authentication enabled
 
-Create a Firebase project, register a Web app, enable Email/Password Authentication, and download a service-account key for local backend development. See [`docs/FIREBASE_SETUP.md`](docs/FIREBASE_SETUP.md).
+See [`docs/FIREBASE_SETUP.md`](docs/FIREBASE_SETUP.md) for Firebase setup details.
+
+### 1. Clone
+
+```bash
+git clone https://github.com/MotherTheresa64/Ledgerly.git
+cd Ledgerly
+```
 
 ### 2. Backend
 
@@ -157,9 +183,14 @@ pip install -r requirements.txt
 python run.py
 ```
 
-The API runs at `http://localhost:5000`, with health at `http://localhost:5000/api/health`.
+Local API: `http://localhost:5000`  
+Health check: `http://localhost:5000/api/health`
+
+The local default database is SQLite. Tables and additive compatibility migrations are applied on application startup.
 
 ### 3. Frontend
+
+In another terminal:
 
 ```bash
 cd client
@@ -167,22 +198,24 @@ npm install
 npm run dev
 ```
 
-The frontend runs at `http://localhost:5173` and defaults to `http://localhost:5000/api` locally.
+Local frontend: `http://localhost:5173`
 
 ## Environment variables
 
-Server:
+### Backend
 
 ```text
 SECRET_KEY=<long random value>
-DATABASE_URL=<PostgreSQL URL in production>
-CLIENT_ORIGIN=<frontend origin>
+DATABASE_URL=<PostgreSQL URL in production; optional locally>
+CLIENT_ORIGIN=<allowed frontend origin; comma-separated origins supported>
 FIREBASE_PROJECT_ID=<Firebase project id>
-FIREBASE_SERVICE_ACCOUNT_JSON=<single-line service-account JSON>
+FIREBASE_SERVICE_ACCOUNT_JSON=<backend-only service-account JSON>
 FIREBASE_REQUIRE_VERIFIED_EMAIL=true
 ```
 
-Client:
+The backend can also use `GOOGLE_APPLICATION_CREDENTIALS` / Application Default Credentials instead of embedding service-account JSON in an environment variable. Never expose the service-account credential to the frontend.
+
+### Frontend
 
 ```text
 VITE_API_URL=<API origin>/api
@@ -192,16 +225,18 @@ VITE_FIREBASE_PROJECT_ID=<Firebase project id>
 VITE_FIREBASE_APP_ID=<Firebase web app id>
 ```
 
-The Firebase Web configuration is expected to be present in the browser application. The service-account JSON is privileged and belongs only in the backend deployment environment.
+Firebase Web configuration is intentionally browser-visible; it is not the privileged service-account credential.
 
-## Quality gates
+## Testing and quality gates
 
 Backend:
 
 ```bash
 cd server
-pytest
+pytest -q
 ```
+
+The suite covers authentication boundaries, user isolation, account/transfer behavior, imports, transactions, budgets, goals, exact-cent arithmetic, fractional-cent rejection, month boundaries, over-100% budgets, schema migration/backfill, safe missing-resource errors, and security headers.
 
 Frontend:
 
@@ -213,31 +248,27 @@ npm run typecheck
 npm run build
 ```
 
-GitHub Actions runs the same checks on pull requests. Backend tests cover Python 3.12 and Python 3.14.
-
-## CSV format
-
-```csv
-description,amount,category,date,notes
-Paycheck,3200,Income,2026-08-18,Primary income
-Groceries,-245.50,Food & Dining,2026-08-18,Weekly groceries
-```
-
-Imported amounts use the signed storage representation: positive numbers are income and negative numbers are expenses. The normal transaction form hides that implementation detail behind explicit Income / Expense controls.
+GitHub Actions runs the frontend gates plus the backend test suite on Python 3.12 and Python 3.14 for every pull request.
 
 ## API overview
 
-Authentication endpoints are provided by Firebase rather than Flask. Ledgerly's backend exposes only the finance/account-data API:
+Firebase provides authentication endpoints. Ledgerly exposes the finance/account-data API:
 
 ```text
+GET    /api/health
 GET    /api/account
 DELETE /api/account
+GET    /api/accounts
+POST   /api/accounts
+PATCH  /api/accounts/:id
+DELETE /api/accounts/:id
 GET    /api/dashboard
 GET    /api/transactions
 POST   /api/transactions
 POST   /api/transactions/import
 PATCH  /api/transactions/:id
 DELETE /api/transactions/:id
+POST   /api/transfers
 GET    /api/budgets
 POST   /api/budgets
 PATCH  /api/budgets/:id
@@ -247,20 +278,40 @@ POST   /api/goals
 PATCH  /api/goals/:id
 POST   /api/goals/:id/contribute
 DELETE /api/goals/:id
+GET    /api/export
 DELETE /api/data
 POST   /api/demo/seed
 POST   /api/demo/reset
-GET    /api/health
 ```
 
-Every protected request sends the current Firebase ID token in `Authorization: Bearer <token>`. The Flask API verifies that token and resolves it to the corresponding Ledgerly user before querying finance data.
+Protected requests send the current Firebase ID token as `Authorization: Bearer <token>`. The API verifies it, maps the Firebase UID to an internal user, and scopes finance operations to that user.
 
-See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/CONSUMER_READINESS.md`](docs/CONSUMER_READINESS.md), [`docs/FIREBASE_SETUP.md`](docs/FIREBASE_SETUP.md), and [`SECURITY.md`](SECURITY.md) for implementation and deployment details.
+## Key engineering decisions
+
+- **Exact integer cents:** avoids binary floating-point accumulation errors in financial calculations.
+- **Additive migration:** existing deployments can backfill cents without a destructive database reset.
+- **Paired transfer records:** transfers move value between accounts while remaining excluded from income/expense analytics.
+- **Server-side ownership:** frontend filtering is never treated as authorization.
+- **Local `asOf` context:** current-month calculations stay correct across browser/server timezone boundaries and are deterministic in tests.
+- **Grouped account/budget aggregation:** avoids per-account/per-budget query loops on dashboard reads.
+- **Managed identity:** Firebase owns credentials while Ledgerly stays focused on financial-domain logic.
+- **Safe API failures:** database failures roll back, unexpected exceptions return generic user-safe messages, and request IDs make failures traceable without exposing stack traces.
 
 ## Deployment
 
-`render.yaml` defines PostgreSQL, the Flask/Gunicorn API, and the React static site. Firebase Authentication remains an external managed identity service. Configure the Firebase environment values in Render, add the deployed Ledgerly frontend to Firebase's authorized domains, and allow Render to rebuild from `main`.
+[`render.yaml`](render.yaml) defines:
+- PostgreSQL database
+- Gunicorn/Flask API service
+- Vite static frontend
+- API health check
+- SPA route rewrite
 
-## Status
+For production, configure the backend/frontend environment variables, add the deployed frontend domain to Firebase Authentication's authorized domains, and ensure `CLIENT_ORIGIN` matches the deployed frontend origin.
 
-Ledgerly's application code covers the intended consumer v1 scope: managed authentication, email verification, password recovery, user-scoped finance CRUD, analytics, budgets, goals, data portability, destructive-data controls, responsive UI, persistent themes, automated regression tests, CI, and production deployment configuration.
+## Security
+
+See [`SECURITY.md`](SECURITY.md). Do not commit database URLs, Firebase Admin credentials, private keys, passwords, bearer tokens, or real personal financial data.
+
+## Limitations
+
+Ledgerly currently uses manual/demo/CSV financial data; it does not connect to banks or payment networks. That limitation is intentional and represented honestly in the UI/repository rather than simulated as a real banking integration.
