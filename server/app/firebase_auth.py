@@ -8,6 +8,7 @@ import firebase_admin
 from firebase_admin import auth as firebase_auth
 from firebase_admin import credentials
 from flask import current_app, g, jsonify, request
+from sqlalchemy.exc import IntegrityError
 
 from .extensions import db
 from .models import User
@@ -88,7 +89,9 @@ def _ledgerly_user_for_claims(claims):
 
     existing = User.query.filter_by(email=email).first()
     if existing:
-        if existing.firebase_uid and existing.firebase_uid != uid:
+        # Linking by email hands over existing financial data, so it needs a verified
+        # address even when FIREBASE_REQUIRE_VERIFIED_EMAIL is relaxed for development.
+        if not verified or (existing.firebase_uid and existing.firebase_uid != uid):
             return None
         existing.firebase_uid = uid
         if verified and not existing.email_verified_at:
@@ -104,7 +107,12 @@ def _ledgerly_user_for_claims(claims):
     if verified:
         user.email_verified_at = datetime.now(UTC)
     db.session.add(user)
-    db.session.commit()
+    try:
+        db.session.commit()
+    except IntegrityError:
+        # Parallel first requests (e.g. /account and /dashboard) race to create the row.
+        db.session.rollback()
+        return User.query.filter_by(firebase_uid=uid).first()
     return user
 
 

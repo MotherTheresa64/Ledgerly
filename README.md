@@ -27,12 +27,12 @@ Ledgerly is a production-minded full-stack personal-finance application for trac
 ### Transactions
 - Create, edit, and delete transactions
 - Explicit Income / Expense selection so users never need to enter negative values manually
-- Controlled categories and optional notes
+- Suggested categories (free text, matched to budgets case-insensitively) and optional notes
 - Search across description, category, and notes
 - Filter by category, type, and date range
 - Sort by date or transaction magnitude
 - CSV export
-- Validated, atomic CSV import of up to 1,000 transactions at a time
+- Validated CSV import of up to 1,000 transactions at a time: valid rows are saved in one database commit, while invalid rows and duplicates are reported back (the API also offers an all-or-nothing mode)
 
 ### Budgets
 - Create category budgets
@@ -264,3 +264,10 @@ See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/CONSUMER_READINESS.md
 ## Status
 
 Ledgerly's application code covers the intended consumer v1 scope: managed authentication, email verification, password recovery, user-scoped finance CRUD, analytics, budgets, goals, data portability, destructive-data controls, responsive UI, persistent themes, automated regression tests, CI, and production deployment configuration.
+
+## Known limitations
+
+- Amounts are stored as floating-point values rounded to cents at the API boundary. Integer cents (or `Numeric(12,2)`) would remove rounding drift on very large histories; it needs a data migration and is not done yet.
+- `/dashboard`, `/transactions` and `/export` return every row for the user. Fine for personal-scale data; server-side paging is the next step for heavy importers.
+- There is no frontend test suite; the client is covered by type checking, the production build and manual checks. Server behaviour is covered by pytest.
+- The client `package.json` pins `@grpc/grpc-js` through `overrides`: Firebase's Firestore package still declares `~1.9.0`, which has published advisories. grpc-js is only used by Firestore's Node build, never by the browser bundle.

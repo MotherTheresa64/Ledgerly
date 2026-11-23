@@ -146,7 +146,7 @@ def parse_account_payload(payload, existing=None):
     return name, account_type, institution, opening_balance, description, include_in_totals, archived
 
 
-def parse_transaction_payload(payload, uid):
+def parse_transaction_payload(payload, uid, current_account_id=None):
     try:
         description = str(payload["description"]).strip()
         amount = float(payload["amount"])
@@ -168,7 +168,7 @@ def parse_transaction_payload(payload, uid):
     account = owned_account(uid, payload.get("accountId"))
     if account is False:
         return None, "The selected account was not found."
-    if account and account.archived:
+    if account and account.archived and account.id != current_account_id:
         return None, "Archived accounts cannot receive new transactions."
 
     raw_tags = payload.get("tags", [])
@@ -199,7 +199,7 @@ def budget_payload(uid):
     for budget in budgets:
         spent = db.session.query(func.coalesce(func.sum(func.abs(Transaction.amount)), 0)).filter(
             Transaction.user_id == uid,
-            Transaction.category == budget.category,
+            func.lower(Transaction.category) == budget.category.lower(),
             Transaction.transaction_type == "expense",
             Transaction.date >= start,
             Transaction.date <= end,
@@ -529,10 +529,15 @@ def update_transaction(transaction_id):
     item = Transaction.query.filter_by(id=transaction_id, user_id=uid).first_or_404()
     if item.transaction_type == "transfer" or item.transfer_group:
         return {"error": "Transfers are paired entries. Delete and recreate the transfer instead of editing one side."}, 409
-    parsed, error = parse_transaction_payload(request.get_json() or {}, uid)
+    payload = request.get_json() or {}
+    parsed, error = parse_transaction_payload(payload, uid, current_account_id=item.account_id)
     if not parsed:
         return {"error": error}, 400
+    # PATCH: optional fields the client did not send keep their stored values.
+    optional = {"notes": "notes", "subcategory": "subcategory", "tags": "tags", "account_id": "accountId"}
     for key, value in parsed.items():
+        if key in optional and optional[key] not in payload:
+            continue
         setattr(item, key, value)
     db.session.commit()
     return serialize_transaction(item, account_map(uid))
