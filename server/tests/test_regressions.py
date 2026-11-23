@@ -73,3 +73,5 @@ def test_budget_counts_spend_regardless_of_category_case(client):
     create_tx(client, h, category="Groceries", amount=30)
     budget = client.get("/api/budgets", headers=h).get_json()[0]
     assert budget["spent"] == 30
+    # The dashboard must agree: this spend is budgeted, not unbudgeted.
+    assert client.get("/api/dashboard", headers=h).get_json()["unbudgetedSpending"] == 0

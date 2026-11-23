@@ -2,6 +2,8 @@
 
 Ledgerly is a production-minded full-stack personal-finance application for tracking cash flow, managing monthly budgets, and building savings goals through a polished responsive dashboard.
 
+Live demo (frontend): https://ledgerly-web-knmt.onrender.com. The API is a separate Render service, so the first request after idle can be slow.
+
 ## Consumer-ready v1 feature set
 
 ### Authentication and account lifecycle
@@ -23,6 +25,11 @@ Ledgerly is a production-minded full-stack personal-finance application for trac
 - Savings-goal progress
 - Quick financial insights
 - Realistic six-month demo dataset for evaluation
+
+### Accounts and transfers
+- Financial accounts (checking, savings, cash, credit, loan, investment, other) with opening balance, archive and include-in-totals controls
+- Derived account balances and atomic two-sided transfers between accounts that do not count as income or expense
+- Reports page and a full JSON backup export
 
 ### Transactions
 - Create, edit, and delete transactions
@@ -214,7 +221,7 @@ Backend:
 
 ```bash
 cd server
-pytest
+python -m pytest -q   # 43 tests, in-memory SQLite, no Firebase project needed
 ```
 
 Frontend:
@@ -246,6 +253,12 @@ Authentication endpoints are provided by Firebase rather than Flask. Ledgerly's 
 ```text
 GET    /api/account
 DELETE /api/account
+GET    /api/accounts
+POST   /api/accounts
+PATCH  /api/accounts/:id
+DELETE /api/accounts/:id
+POST   /api/transfers
+GET    /api/export
 GET    /api/dashboard
 GET    /api/transactions
 POST   /api/transactions
@@ -269,7 +282,7 @@ GET    /api/health
 
 Every protected request sends the current Firebase ID token in `Authorization: Bearer <token>`. The Flask API verifies that token and resolves it to the corresponding Ledgerly user before querying finance data.
 
-See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/CONSUMER_READINESS.md`](docs/CONSUMER_READINESS.md), [`docs/FIREBASE_SETUP.md`](docs/FIREBASE_SETUP.md), and [`SECURITY.md`](SECURITY.md) for implementation and deployment details.
+See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the design, data flow, security decisions, testing, CI and limitations, [`docs/CONSUMER_READINESS.md`](docs/CONSUMER_READINESS.md), [`docs/FIREBASE_SETUP.md`](docs/FIREBASE_SETUP.md), and [`SECURITY.md`](SECURITY.md) for implementation and deployment details.
 
 ## Deployment
 

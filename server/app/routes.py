@@ -404,8 +404,9 @@ def dashboard():
 
     budgets = budget_payload(uid)
     goals = Goal.query.filter_by(user_id=uid).order_by(Goal.id.desc()).all()
-    budget_categories = {item["category"] for item in budgets}
-    unbudgeted_spending = sum(amount for category, amount in categories.items() if category not in budget_categories)
+    # Case-insensitive, matching how budget progress is computed.
+    budget_categories = {item["category"].lower() for item in budgets}
+    unbudgeted_spending = sum(amount for category, amount in categories.items() if (category or "").lower() not in budget_categories)
     budget_remaining = sum(money(item["remaining"]) for item in budgets)
     net_cash_flow = month_income - month_expenses
     savings_rate = (net_cash_flow / month_income * 100) if month_income else 0
