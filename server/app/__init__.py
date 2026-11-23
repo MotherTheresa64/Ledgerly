@@ -3,7 +3,7 @@ import os
 
 from flask import Flask, jsonify, request
 from flask_cors import CORS
-from sqlalchemy import inspect, text
+from sqlalchemy import Float, inspect, text
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from .config import Config
@@ -70,6 +70,35 @@ def ensure_finance_schema():
             if name not in existing:
                 db.session.execute(text(f'ALTER TABLE "goal" ADD COLUMN {name} {definition}'))
 
+    db.session.commit()
+
+
+MONEY_COLUMNS = {
+    "financial_account": ["opening_balance"],
+    "transaction": ["amount"],
+    "budget": ["limit"],
+    "goal": ["target", "saved"],
+}
+
+
+def ensure_money_schema():
+    """Convert legacy float money columns to NUMERIC(12,2) on PostgreSQL.
+
+    SQLite needs nothing: NUMERIC affinity already stores/reads the old REAL values.
+    Rollback: ALTER TABLE ... ALTER COLUMN ... TYPE double precision (see README).
+    """
+    if db.engine.dialect.name != "postgresql":
+        return
+    inspector = inspect(db.engine)
+    for table, columns in MONEY_COLUMNS.items():
+        if not inspector.has_table(table):
+            continue
+        for column in inspector.get_columns(table):
+            if column["name"] in columns and isinstance(column["type"], Float):
+                name = column["name"]
+                db.session.execute(text(
+                    f'ALTER TABLE "{table}" ALTER COLUMN "{name}" TYPE NUMERIC(12,2) USING round("{name}"::numeric, 2)'
+                ))
     db.session.commit()
 
 
@@ -167,5 +196,6 @@ def create_app(test_config=None):
         db.create_all()
         ensure_auth_schema()
         ensure_finance_schema()
+        ensure_money_schema()
 
     return app

@@ -2,6 +2,8 @@ from datetime import UTC, date, datetime
 from werkzeug.security import generate_password_hash
 from .extensions import db
 
+MONEY = db.Numeric(12, 2)
+
 
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -27,7 +29,7 @@ class FinancialAccount(db.Model):
     name = db.Column(db.String(120), nullable=False)
     account_type = db.Column(db.String(32), nullable=False, default="checking", index=True)
     institution = db.Column(db.String(120), nullable=True)
-    opening_balance = db.Column(db.Float, nullable=False, default=0)
+    opening_balance = db.Column(MONEY, nullable=False, default=0)
     description = db.Column(db.String(500), nullable=True)
     include_in_totals = db.Column(db.Boolean, nullable=False, default=True)
     archived = db.Column(db.Boolean, nullable=False, default=False, index=True)
@@ -39,7 +41,7 @@ class Transaction(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
     account_id = db.Column(db.Integer, db.ForeignKey("financial_account.id"), nullable=True, index=True)
     description = db.Column(db.String(180), nullable=False)
-    amount = db.Column(db.Float, nullable=False)
+    amount = db.Column(MONEY, nullable=False)
     transaction_type = db.Column(db.String(16), nullable=False, default="expense", index=True)
     category = db.Column(db.String(80), nullable=False, index=True)
     subcategory = db.Column(db.String(80), nullable=True)
@@ -52,7 +54,7 @@ class Transaction(db.Model):
         return {
             "id": self.id,
             "description": self.description,
-            "amount": self.amount,
+            "amount": float(self.amount),
             "transactionType": self.transaction_type or ("income" if self.amount >= 0 else "expense"),
             "accountId": self.account_id,
             "accountName": account_name,
@@ -69,14 +71,14 @@ class Budget(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
     category = db.Column(db.String(80), nullable=False)
-    limit = db.Column(db.Float, nullable=False)
+    limit = db.Column(MONEY, nullable=False)
 
 
 class Goal(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
     name = db.Column(db.String(120), nullable=False)
-    target = db.Column(db.Float, nullable=False)
-    saved = db.Column(db.Float, default=0, nullable=False)
+    target = db.Column(MONEY, nullable=False)
+    saved = db.Column(MONEY, default=0, nullable=False)
     target_date = db.Column(db.Date, nullable=True)
     notes = db.Column(db.Text, nullable=True)

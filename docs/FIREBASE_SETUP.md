@@ -147,3 +147,24 @@ After deployment:
 - Flask validates ID-token signatures, expiry, revocation state, Firebase project, and verified-email status before resolving finance ownership.
 - The Firebase service-account private key is backend-only.
 - Financial data remains in PostgreSQL and is always queried by Ledgerly's internal user id after Firebase authentication succeeds.
+
+## Local mode (Firebase Auth emulator, no real project)
+
+Run the whole app offline with the Auth emulator:
+
+```bash
+npx firebase-tools emulators:start --only auth --project demo-ledgerly   # from the repo root; UI at http://127.0.0.1:4000
+```
+
+- Server: `FIREBASE_PROJECT_ID=demo-ledgerly` and `FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099` (no credentials needed).
+- Client: `VITE_FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099` (placeholder key/project are filled in automatically).
+- Email verification stays enforced. After registering, open the emulator UI (Authentication tab) and verify the user, or call the REST API:
+
+```bash
+# list codes, then apply the verifyEmail oobCode (or set emailVerified directly)
+curl http://127.0.0.1:9099/emulator/v1/projects/demo-ledgerly/oobCodes
+curl -X POST "http://127.0.0.1:9099/identitytoolkit.googleapis.com/v1/accounts:update?key=x" \
+  -H "Content-Type: application/json" -d '{"oobCode":"<code>"}'
+```
+
+`client/e2e/local-smoke.mjs` automates all of this (see the README).

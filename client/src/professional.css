@@ -99,7 +99,7 @@ button {
   margin-top: 2px;
   max-width: 150px;
   color: var(--text-tertiary);
-  font-size: 10px;
+  font-size: 0.75rem;
   line-height: 1.3;
 }
 
@@ -154,7 +154,7 @@ button {
 .sidebar-foot > span {
   padding: 0 10px;
   color: var(--text-tertiary);
-  font-size: 9px;
+  font-size: 0.75rem;
   letter-spacing: 0.1em;
 }
 
@@ -186,7 +186,7 @@ button {
 
 .eyebrow {
   color: var(--text-tertiary);
-  font-size: 10px;
+  font-size: 0.75rem;
   font-weight: 700;
   letter-spacing: 0.13em;
 }
@@ -385,7 +385,7 @@ textarea:focus-visible {
 
 .metric span {
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: 0.75rem;
   font-weight: 590;
 }
 
@@ -400,7 +400,7 @@ textarea:focus-visible {
 
 .metric small {
   color: var(--text-tertiary);
-  font-size: 10px;
+  font-size: 0.75rem;
 }
 
 /* ---------- Panels / layout ---------- */
@@ -462,7 +462,7 @@ textarea:focus-visible {
 .card-head > span,
 .card-head > div > span {
   color: var(--text-tertiary);
-  font-size: 10px;
+  font-size: 0.75rem;
 }
 
 .empty,
@@ -504,7 +504,7 @@ textarea:focus-visible {
 .budget-status,
 .goal-status {
   color: var(--text-tertiary) !important;
-  font-size: 9px !important;
+  font-size: 0.75rem !important;
   letter-spacing: 0.1em;
 }
 
@@ -596,7 +596,7 @@ textarea:focus-visible {
 .legend {
   gap: 14px;
   color: var(--text-tertiary);
-  font-size: 10px;
+  font-size: 0.75rem;
 }
 
 .legend span::before {
@@ -615,12 +615,12 @@ textarea:focus-visible {
 
 .trend-column > strong {
   color: var(--text-secondary);
-  font-size: 10px;
+  font-size: 0.75rem;
   font-weight: 600;
 }
 
 .trend-column > small {
-  font-size: 9px;
+  font-size: 0.75rem;
 }
 
 .progress {
@@ -653,7 +653,7 @@ textarea:focus-visible {
 
 .category-list strong {
   color: var(--text-primary);
-  font-size: 11px;
+  font-size: 0.75rem;
   font-weight: 630;
 }
 
@@ -678,7 +678,7 @@ textarea:focus-visible {
 .transaction-main span,
 .transaction-main small {
   color: var(--text-tertiary);
-  font-size: 10px;
+  font-size: 0.75rem;
 }
 
 .tx-icon {
@@ -719,7 +719,7 @@ textarea:focus-visible {
   border-radius: 6px;
   background: transparent;
   color: var(--text-secondary);
-  font-size: 10px;
+  font-size: 0.75rem;
 }
 
 .row-actions button:hover {
@@ -752,7 +752,7 @@ textarea:focus-visible {
 
 .insight-list span {
   color: var(--text-tertiary);
-  font-size: 9px;
+  font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
@@ -862,7 +862,7 @@ textarea:focus-visible {
 .brand-proof strong {
   width: 24px;
   color: var(--text-tertiary);
-  font-size: 9px;
+  font-size: 0.75rem;
   letter-spacing: 0.08em;
 }
 
@@ -923,7 +923,7 @@ textarea:focus-visible {
   background: color-mix(in srgb, var(--surface-1) 94%, transparent);
   color: var(--text-secondary);
   box-shadow: 0 8px 24px rgb(0 0 0 / 0.18);
-  font-size: 11px;
+  font-size: 0.75rem;
   font-weight: 620;
 }
 
@@ -951,7 +951,7 @@ textarea:focus-visible {
 
 .theme-popover-head span {
   color: var(--text-tertiary);
-  font-size: 10px;
+  font-size: 0.75rem;
 }
 
 .theme-close {
@@ -980,12 +980,12 @@ textarea:focus-visible {
 }
 
 .theme-option strong {
-  font-size: 11px;
+  font-size: 0.75rem;
 }
 
 .theme-option small {
   color: var(--text-tertiary);
-  font-size: 9px;
+  font-size: 0.75rem;
 }
 
 .theme-swatch {
@@ -1130,7 +1130,7 @@ textarea:focus-visible {
     border-radius: 7px;
     background: transparent;
     color: var(--text-secondary);
-    font-size: 11px;
+    font-size: 0.75rem;
   }
 
   .mobile-nav-toggle:hover,
@@ -1164,7 +1164,7 @@ textarea:focus-visible {
   .logout {
     min-height: 36px !important;
     padding: 7px 9px !important;
-    font-size: 11px;
+    font-size: 0.75rem;
   }
 
   .dashboard {
@@ -1204,7 +1204,7 @@ textarea:focus-visible {
   }
 
   .metric small {
-    font-size: 9px;
+    font-size: 0.75rem;
   }
 
   .card {

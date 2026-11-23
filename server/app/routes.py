@@ -1,5 +1,6 @@
 from calendar import monthrange
 from datetime import UTC, date, datetime
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from uuid import uuid4
 
 from flask import Blueprint, jsonify, request
@@ -13,6 +14,20 @@ api = Blueprint("api", __name__, url_prefix="/api")
 MAX_IMPORT_ROWS = 1000
 ACCOUNT_TYPES = {"checking", "savings", "cash", "credit", "loan", "investment", "other"}
 TRANSACTION_TYPES = {"income", "expense", "transfer"}
+CENT = Decimal("0.01")
+
+
+def money(value):
+    """Parse any number-like value to exact Decimal cents (ValueError if unusable)."""
+    try:
+        return Decimal(str(float(value))).quantize(CENT, rounding=ROUND_HALF_UP)
+    except InvalidOperation as exc:
+        raise ValueError("invalid money value") from exc
+
+
+def cents(value):
+    """Normalise a DB/SQL value (Decimal, float on SQLite sums, None) to Decimal cents."""
+    return Decimal(str(value or 0)).quantize(CENT, rounding=ROUND_HALF_UP)
 
 
 def current_user_id():
@@ -57,7 +72,7 @@ def account_balance(account):
         Transaction.user_id == account.user_id,
         Transaction.account_id == account.id,
     ).scalar()
-    return round(float(account.opening_balance or 0) + float(movement or 0), 2)
+    return cents(account.opening_balance) + cents(movement)
 
 
 def serialize_account(account):
@@ -66,8 +81,8 @@ def serialize_account(account):
         "name": account.name,
         "type": account.account_type,
         "institution": account.institution or "",
-        "openingBalance": round(float(account.opening_balance or 0), 2),
-        "currentBalance": account_balance(account),
+        "openingBalance": float(cents(account.opening_balance)),
+        "currentBalance": float(account_balance(account)),
         "description": account.description or "",
         "includeInTotals": bool(account.include_in_totals),
         "archived": bool(account.archived),
@@ -82,17 +97,17 @@ def serialize_transaction(transaction, accounts=None):
 
 
 def serialize_goal(goal):
-    target = float(goal.target or 0)
-    saved = float(goal.saved or 0)
+    target = cents(goal.target)
+    saved = cents(goal.saved)
     return {
         "id": goal.id,
         "name": goal.name,
-        "target": target,
-        "saved": saved,
+        "target": float(target),
+        "saved": float(saved),
         "targetDate": goal.target_date.isoformat() if goal.target_date else None,
         "notes": goal.notes or "",
-        "amountRemaining": round(max(target - saved, 0), 2),
-        "percentComplete": round(min((saved / target * 100) if target else 0, 100), 2),
+        "amountRemaining": float(max(target - saved, Decimal(0))),
+        "percentComplete": round(min((float(saved) / float(target) * 100) if target else 0, 100), 2),
     }
 
 
@@ -104,9 +119,9 @@ def monthly_trend(transactions):
         expenses = abs(sum(item.amount for item in items if item.transaction_type == "expense" or (not item.transaction_type and item.amount < 0)))
         result.append({
             "month": date(year, month, 1).strftime("%b"),
-            "income": round(income, 2),
-            "expenses": round(expenses, 2),
-            "net": round(income - expenses, 2),
+            "income": float(cents(income)),
+            "expenses": float(cents(expenses)),
+            "net": float(cents(income - expenses)),
         })
     return result
 
@@ -133,7 +148,7 @@ def parse_account_payload(payload, existing=None):
         name = str(payload.get("name", existing.name if existing else "")).strip()
         account_type = str(payload.get("type", existing.account_type if existing else "checking")).strip().lower()
         institution = str(payload.get("institution", existing.institution if existing else "") or "").strip()
-        opening_balance = float(payload.get("openingBalance", existing.opening_balance if existing else 0))
+        opening_balance = money(payload.get("openingBalance", existing.opening_balance if existing else 0))
         description = str(payload.get("description", existing.description if existing else "") or "").strip()
         include_in_totals = payload.get("includeInTotals", existing.include_in_totals if existing else True)
         archived = payload.get("archived", existing.archived if existing else False)
@@ -149,7 +164,7 @@ def parse_account_payload(payload, existing=None):
 def parse_transaction_payload(payload, uid, current_account_id=None):
     try:
         description = str(payload["description"]).strip()
-        amount = float(payload["amount"])
+        amount = money(payload["amount"])
         category = str(payload["category"]).strip()
         tx_date = datetime.strptime(str(payload["date"]), "%Y-%m-%d").date()
         notes = str(payload.get("notes", "")).strip()
@@ -204,15 +219,15 @@ def budget_payload(uid):
             Transaction.date >= start,
             Transaction.date <= end,
         ).scalar()
-        spent_value = float(spent or 0)
-        percent = (spent_value / budget.limit * 100) if budget.limit else 0
+        spent_value = cents(spent)
+        percent = (float(spent_value) / float(budget.limit) * 100) if budget.limit else 0
         status = "over" if percent >= 100 else "approaching" if percent >= 80 else "healthy"
         result.append({
             "id": budget.id,
             "category": budget.category,
-            "limit": budget.limit,
-            "spent": round(spent_value, 2),
-            "remaining": round(budget.limit - spent_value, 2),
+            "limit": float(cents(budget.limit)),
+            "spent": float(spent_value),
+            "remaining": float(cents(budget.limit) - spent_value),
             "percentUsed": round(percent, 2),
             "status": status,
         })
@@ -376,7 +391,7 @@ def dashboard():
     month_expenses = abs(sum(item.amount for item in month_items if item.transaction_type == "expense" or (not item.transaction_type and item.amount < 0)))
 
     if accounts_serialized:
-        tracked_balance = sum(item["currentBalance"] for item in accounts_serialized if item["includeInTotals"] and not item["archived"])
+        tracked_balance = sum(money(item["currentBalance"]) for item in accounts_serialized if item["includeInTotals"] and not item["archived"])
         unassigned_balance = sum(item.amount for item in transactions if item.account_id is None)
         total_balance = tracked_balance + unassigned_balance
     else:
@@ -391,10 +406,10 @@ def dashboard():
     goals = Goal.query.filter_by(user_id=uid).order_by(Goal.id.desc()).all()
     budget_categories = {item["category"] for item in budgets}
     unbudgeted_spending = sum(amount for category, amount in categories.items() if category not in budget_categories)
-    budget_remaining = sum(item["remaining"] for item in budgets)
+    budget_remaining = sum(money(item["remaining"]) for item in budgets)
     net_cash_flow = month_income - month_expenses
     savings_rate = (net_cash_flow / month_income * 100) if month_income else 0
-    actual_expense_categories = sorted(({"category": key, "amount": round(value, 2)} for key, value in categories.items()), key=lambda item: item["amount"], reverse=True)[:12]
+    actual_expense_categories = sorted(({"category": key, "amount": float(cents(value))} for key, value in categories.items()), key=lambda item: item["amount"], reverse=True)[:12]
     savings_contribution = sum(
         item.amount for item in transactions
         if start <= item.date <= end and item.transaction_type == "transfer" and item.amount > 0 and item.account_id in accounts_by_id and accounts_by_id[item.account_id].account_type == "savings"
@@ -402,14 +417,14 @@ def dashboard():
     days_remaining = max((end - date.today()).days + 1, 0)
 
     return {
-        "totalBalance": round(total_balance, 2),
-        "availableBalance": round(total_balance, 2),
-        "income": round(month_income, 2),
-        "expenses": round(month_expenses, 2),
-        "netCashFlow": round(net_cash_flow, 2),
-        "savingsRate": round(savings_rate, 2),
-        "budgetRemaining": round(budget_remaining, 2),
-        "unbudgetedSpending": round(unbudgeted_spending, 2),
+        "totalBalance": float(cents(total_balance)),
+        "availableBalance": float(cents(total_balance)),
+        "income": float(cents(month_income)),
+        "expenses": float(cents(month_expenses)),
+        "netCashFlow": float(cents(net_cash_flow)),
+        "savingsRate": round(float(savings_rate), 2),
+        "budgetRemaining": float(cents(budget_remaining)),
+        "unbudgetedSpending": float(cents(unbudgeted_spending)),
         "categories": actual_expense_categories,
         "accounts": accounts_serialized,
         "transactions": [serialize_transaction(item, accounts_by_id) for item in transactions],
@@ -417,14 +432,14 @@ def dashboard():
         "goals": [serialize_goal(goal) for goal in goals],
         "monthlyTrend": monthly_trend(transactions),
         "monthlyPlan": {
-            "expectedIncome": round(month_income, 2),
-            "actualIncome": round(month_income, 2),
-            "budgetedExpenses": round(sum(item["limit"] for item in budgets), 2),
-            "actualExpenses": round(month_expenses, 2),
-            "amountRemaining": round(net_cash_flow, 2),
-            "unbudgetedSpending": round(unbudgeted_spending, 2),
-            "savingsContribution": round(savings_contribution, 2),
-            "netResult": round(net_cash_flow, 2),
+            "expectedIncome": float(cents(month_income)),
+            "actualIncome": float(cents(month_income)),
+            "budgetedExpenses": float(sum(money(item["limit"]) for item in budgets)),
+            "actualExpenses": float(cents(month_expenses)),
+            "amountRemaining": float(cents(net_cash_flow)),
+            "unbudgetedSpending": float(cents(unbudgeted_spending)),
+            "savingsContribution": float(cents(savings_contribution)),
+            "netResult": float(cents(net_cash_flow)),
             "daysRemaining": days_remaining,
         },
         "insights": build_insights(month_income, month_expenses, categories, budgets, goals),
@@ -456,7 +471,7 @@ def create_transfer():
     try:
         from_id = int(payload["fromAccountId"])
         to_id = int(payload["toAccountId"])
-        amount = abs(float(payload["amount"]))
+        amount = abs(money(payload["amount"]))
         tx_date = datetime.strptime(str(payload["date"]), "%Y-%m-%d").date()
         description = str(payload.get("description") or "Transfer").strip()
         notes = str(payload.get("notes") or "").strip()
@@ -566,7 +581,7 @@ def budgets():
         return jsonify(budget_payload(uid))
     payload = request.get_json() or {}
     try:
-        category, limit = str(payload["category"]).strip(), float(payload["limit"])
+        category, limit = str(payload["category"]).strip(), money(payload["limit"])
     except (KeyError, TypeError, ValueError):
         return {"error": "Category and a positive limit are required."}, 400
     if not category or len(category) > 80 or limit <= 0:
@@ -588,7 +603,7 @@ def update_budget(budget_id):
     budget = Budget.query.filter_by(id=budget_id, user_id=uid).first_or_404()
     payload = request.get_json() or {}
     try:
-        limit = float(payload["limit"])
+        limit = money(payload["limit"])
     except (KeyError, TypeError, ValueError):
         return {"error": "A positive limit is required."}, 400
     if limit <= 0:
@@ -616,8 +631,8 @@ def goals():
     payload = request.get_json() or {}
     try:
         name = str(payload["name"]).strip()
-        target = float(payload["target"])
-        saved = float(payload.get("saved", 0))
+        target = money(payload["target"])
+        saved = money(payload.get("saved", 0))
         notes = str(payload.get("notes", "") or "").strip()
         target_date = datetime.strptime(str(payload["targetDate"]), "%Y-%m-%d").date() if payload.get("targetDate") else None
     except (KeyError, TypeError, ValueError):
@@ -637,8 +652,8 @@ def update_goal(goal_id):
     payload = request.get_json() or {}
     try:
         name = str(payload.get("name", goal.name)).strip()
-        target = float(payload.get("target", goal.target))
-        saved = float(payload.get("saved", goal.saved))
+        target = money(payload.get("target", goal.target))
+        saved = money(payload.get("saved", goal.saved))
         notes = str(payload.get("notes", goal.notes or "") or "").strip()
         target_date = datetime.strptime(str(payload["targetDate"]), "%Y-%m-%d").date() if payload.get("targetDate") else (None if "targetDate" in payload else goal.target_date)
     except (TypeError, ValueError):
@@ -656,12 +671,12 @@ def contribute_goal(goal_id):
     goal = Goal.query.filter_by(id=goal_id, user_id=current_user_id()).first_or_404()
     payload = request.get_json() or {}
     try:
-        amount = float(payload["amount"])
+        amount = money(payload["amount"])
     except (KeyError, TypeError, ValueError):
         return {"error": "A positive contribution is required."}, 400
     if amount <= 0:
         return {"error": "A positive contribution is required."}, 400
-    goal.saved += amount
+    goal.saved = cents(goal.saved) + amount
     db.session.commit()
     return serialize_goal(goal)
 

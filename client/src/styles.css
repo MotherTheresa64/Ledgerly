@@ -40,7 +40,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .auth-card { width: min(460px, 92%); background: #111a15e8; backdrop-filter: blur(14px); border: 1px solid var(--border); border-radius: 20px; padding: 36px; box-shadow: 0 30px 80px #0008; }
 .auth-card h2 { font-size: 32px; margin: 8px 0; letter-spacing: -.025em; }
 .auth-card > p { color: var(--muted); margin-top: 0; }
-.eyebrow { font-size: 11px; letter-spacing: .16em; color: var(--green2); font-weight: 800; }
+.eyebrow { font-size: 0.75rem; letter-spacing: .16em; color: var(--green2); font-weight: 800; }
 .auth-card form, .stack { display: grid; gap: 16px; margin-top: 28px; }
 .auth-card label, .stack label { display: grid; gap: 8px; color: #cdd8d1; font-size: 14px; }
 .optional { color: var(--subtle); font-size: 12px; }
@@ -70,7 +70,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--green); box-shad
 .sidebar { position: sticky; top: 0; height: 100vh; background: #0d1410e8; backdrop-filter: blur(14px); border-right: 1px solid var(--border); padding: 24px 16px; display: flex; flex-direction: column; }
 .brand { display: flex; align-items: center; gap: 12px; padding: 4px 8px 28px; font-size: 18px; }
 .brand > div:last-child { display: grid; gap: 2px; }
-.brand > div:last-child span { font-size: 11px; color: var(--subtle); }
+.brand > div:last-child span { font-size: 0.75rem; color: var(--subtle); }
 .sidebar nav { display: grid; gap: 6px; }
 .sidebar nav button, .logout { border: 0; background: transparent; color: var(--muted); text-align: left; padding: 12px 14px; border-radius: 9px; cursor: pointer; display: flex; align-items: center; gap: 10px; }
 .nav-dot { width: 7px; height: 7px; border-radius: 50%; background: #314238; }
@@ -78,7 +78,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--green); box-shad
 .sidebar nav button.active { box-shadow: inset 3px 0 var(--green); }
 .sidebar nav button.active .nav-dot { background: var(--green2); box-shadow: 0 0 0 4px #22c55e15; }
 .sidebar-foot { margin-top: auto; display: grid; gap: 10px; }
-.sidebar-foot > span { font-size: 10px; text-transform: uppercase; letter-spacing: .12em; color: #536158; padding: 0 12px; }
+.sidebar-foot > span { font-size: 0.75rem; text-transform: uppercase; letter-spacing: .12em; color: #536158; padding: 0 12px; }
 .logout { border: 1px solid var(--border); width: 100%; }
 .dashboard { padding: 36px; max-width: 1480px; width: 100%; margin: 0 auto; }
 .dashboard header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; gap: 18px; }
@@ -88,7 +88,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--green); box-shad
 .metric { background: linear-gradient(180deg, #111a15, #0f1713); border: 1px solid var(--border); border-radius: 14px; padding: 20px; min-height: 126px; display: flex; flex-direction: column; justify-content: space-between; }
 .metric span { color: var(--muted); font-size: 13px; }
 .metric strong { font-size: 25px; letter-spacing: -.03em; }
-.metric small { color: var(--subtle); font-size: 11px; }
+.metric small { color: var(--subtle); font-size: 0.75rem; }
 .metric.green { box-shadow: inset 0 2px var(--green); }
 .metric.red { box-shadow: inset 0 2px var(--red); }
 .metric.amber { box-shadow: inset 0 2px var(--amber); }
@@ -121,7 +121,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--green); box-shad
 .tx-icon.positive { background: #12341e; color: #86efac; }
 .amount-wrap { display: flex; align-items: center; gap: 12px; flex: 0 0 auto; }
 .row-actions { display: flex; gap: 6px; }
-.row-actions button { border: 1px solid #29372f; background: #172019; color: #a8b5ad; border-radius: 7px; padding: 6px 9px; font-size: 11px; cursor: pointer; }
+.row-actions button { border: 1px solid #29372f; background: #172019; color: #a8b5ad; border-radius: 7px; padding: 6px 9px; font-size: 0.75rem; cursor: pointer; }
 .row-actions button:hover { border-color: #46604f; }
 .row-actions .danger-button { color: #fca5a5; background: #271517; border-color: #4f2529; }
 .expense { color: #f87171 !important; }
@@ -146,7 +146,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--green); box-shad
 .type-toggle button.active.income-type { background: #14351f; color: #bbf7d0; box-shadow: inset 0 0 0 1px #28683d; }
 
 .trend-card { min-height: 300px; }
-.legend { display: flex; gap: 16px; color: var(--muted); font-size: 11px; }
+.legend { display: flex; gap: 16px; color: var(--muted); font-size: 0.75rem; }
 .legend span:before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; }
 .income-key:before { background: var(--green); }
 .expense-key:before { background: var(--red); }
@@ -156,8 +156,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--green); box-shad
 .bar { width: 14px; border-radius: 4px 4px 1px 1px; min-height: 0; }
 .income-bar { background: linear-gradient(#4ade80, #16a34a); }
 .expense-bar { background: linear-gradient(#f87171, #b91c1c); }
-.trend-column > strong { font-size: 11px; color: #9eaca3; }
-.trend-column > small { font-size: 10px; }
+.trend-column > strong { font-size: 0.75rem; color: #9eaca3; }
+.trend-column > small { font-size: 0.75rem; }
 .insights-card { display: flex; flex-direction: column; }
 .insight-list { display: grid; gap: 0; }
 .insight-list > div { display: grid; gap: 6px; padding: 16px 0; border-bottom: 1px solid #1f2b24; }
@@ -171,7 +171,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--green); box-shad
 .budget-value { display: block; font-size: 22px; margin: 8px 0 14px; }
 .budget-value span { font-size: 13px; color: var(--subtle); font-weight: 500; }
 .budget-foot, .goal-meta { display: flex; justify-content: space-between; margin-top: 12px; font-size: 12px; color: var(--subtle); }
-.goal-status { font-size: 9px !important; letter-spacing: .13em; color: var(--green2) !important; }
+.goal-status { font-size: 0.75rem !important; letter-spacing: .13em; color: var(--green2) !important; }
 .goal-card.complete { border-color: #285b37; box-shadow: inset 0 2px #22c55e55; }
 .goal-amount { display: flex; align-items: baseline; gap: 8px; margin: 10px 0 14px; }
 .goal-amount strong { font-size: 25px; }
@@ -187,7 +187,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--green); box-shad
 .settings-card .stack { margin-top: 0; }
 .account-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .account-summary > div { display: grid; gap: 5px; padding: 14px; background: #0c130f; border: 1px solid #1f2d25; border-radius: 10px; }
-.account-summary span { color: var(--subtle); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+.account-summary span { color: var(--subtle); font-size: 0.75rem; text-transform: uppercase; letter-spacing: .08em; }
 .account-summary strong { font-size: 14px; overflow-wrap: anywhere; }
 .settings-actions { display: flex; flex-wrap: wrap; gap: 10px; }
 .settings-actions.vertical { display: grid; }

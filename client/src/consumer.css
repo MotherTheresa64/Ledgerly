@@ -21,14 +21,14 @@ html, body, #root { max-width: 100%; overflow-x: hidden; }
 .account-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .account-card { min-height: 210px; }
 .account-card.archived { opacity: .67; }
-.account-type, .budget-status { display: block; font-size: 9px !important; letter-spacing: .13em; font-weight: 800; text-transform: uppercase; color: var(--green2) !important; margin-bottom: 5px; }
+.account-type, .budget-status { display: block; font-size: 0.75rem !important; letter-spacing: .13em; font-weight: 800; text-transform: uppercase; color: var(--green2) !important; margin-bottom: 5px; }
 .account-balance { display: block; font-size: 29px; letter-spacing: -.035em; margin: 20px 0 12px; }
-.account-meta { display: flex; justify-content: space-between; gap: 10px; color: var(--subtle); font-size: 11px; border-top: 1px solid var(--border); padding-top: 12px; }
+.account-meta { display: flex; justify-content: space-between; gap: 10px; color: var(--subtle); font-size: 0.75rem; border-top: 1px solid var(--border); padding-top: 12px; }
 .accounts-strip { margin-top: 16px; }
 .account-balance-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .account-balance-grid > div { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 14px; background: color-mix(in srgb, var(--panel) 78%, transparent); border: 1px solid var(--border); border-radius: 10px; }
 .account-balance-grid span { display: grid; gap: 3px; color: var(--text); min-width: 0; }
-.account-balance-grid small, .plan-list small { color: var(--subtle); font-size: 10px; }
+.account-balance-grid small, .plan-list small { color: var(--subtle); font-size: 0.75rem; }
 .account-balance-grid strong { white-space: nowrap; }
 .plan-list { display: grid; }
 .plan-list > div { display: flex; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border); color: var(--muted); }
@@ -102,7 +102,7 @@ html, body, #root { max-width: 100%; overflow-x: hidden; }
   .trend-card { overflow: hidden !important; }
   .trend-chart { min-width: 0 !important; width: 100%; gap: 4px !important; height: 190px; }
   .bar { width: 8px !important; }
-  .trend-column > strong, .trend-column > small { font-size: 9px; }
+  .trend-column > strong, .trend-column > small { font-size: 0.75rem; }
   .transaction { min-width: 0; gap: 10px; }
   .transaction-main { min-width: 0; flex: 1 1 auto; }
   .transaction-main > div { max-width: none !important; min-width: 0; }
@@ -118,7 +118,7 @@ html, body, #root { max-width: 100%; overflow-x: hidden; }
 
 @media (max-width: 380px) {
   .sidebar nav { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .sidebar nav button { font-size: 11px; padding-inline: 2px !important; }
+  .sidebar nav button { font-size: 0.75rem; padding-inline: 2px !important; }
   .dashboard { padding-inline: 12px !important; }
   .card, .metric { padding: 15px; }
 }

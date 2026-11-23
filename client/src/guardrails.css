@@ -30,3 +30,19 @@
   opacity: 0.72;
   font-size: 0.75rem;
 }
+
+/* Accessibility floor: every control >= 24px everywhere, >= 44px on touch/phones; text >= 12px. */
+button, select, textarea, summary, [role="button"], input:not([type="hidden"]) { min-height: 24px; min-width: 24px; }
+input[type="checkbox"], input[type="radio"] { width: 24px; height: 24px; }
+.text-button, .compact-link { min-height: 24px; padding-block: 4px; }
+.eyebrow, .metric small, .field-counter, small { font-size: max(0.75rem, 12px); }
+.dashboard { padding-bottom: 88px !important; } /* room above the floating theme button */
+
+@media (pointer: coarse), (max-width: 767px) {
+  .sidebar .logout, .theme-trigger, .mobile-nav-toggle { min-height: 44px !important; min-width: 44px !important; }
+  button.logout, button, select, textarea, summary, [role="button"], input:not([type="hidden"]) { min-height: 44px !important; min-width: 44px !important; }
+  input[type="checkbox"], input[type="radio"] { width: 44px !important; height: 44px !important; }
+  .text-button, .compact-link { display: inline-flex; align-items: center; justify-content: center; min-height: 44px !important; padding-block: 10px; }
+  .dashboard { padding-bottom: 96px !important; }
+  .dashboard header > div { text-align: left; align-self: stretch; }
+}

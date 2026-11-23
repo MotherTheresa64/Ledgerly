@@ -169,6 +169,20 @@ npm run dev
 
 The frontend runs at `http://localhost:5173` and defaults to `http://localhost:5000/api` locally.
 
+### Local mode (no Firebase project)
+
+Run everything against the Firebase Auth emulator (details in [`docs/FIREBASE_SETUP.md`](docs/FIREBASE_SETUP.md)):
+
+```bash
+npx firebase-tools emulators:start --only auth --project demo-ledgerly   # repo root, port 9099
+# server/ (needs firebase_admin installed)
+FIREBASE_PROJECT_ID=demo-ledgerly FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099   CLIENT_ORIGIN=http://127.0.0.1:5173 DATABASE_URL=sqlite:///local-smoke.db python run.py
+# client/
+VITE_FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099 npm run dev -- --host 127.0.0.1
+```
+
+Email verification is still enforced: verify the new user in the emulator UI (`http://127.0.0.1:4000/auth`) or via its REST API. Smoke test: `PLAYWRIGHT_DIR=<path to playwright> node client/e2e/local-smoke.mjs` registers, verifies, signs in, loads demo data and adds a transaction (optional `CHROME_PATH`, `APP_URL`, `TEST_EMAIL`, `TEST_PASSWORD`).
+
 ## Environment variables
 
 Server:
@@ -267,7 +281,7 @@ Ledgerly's application code covers the intended consumer v1 scope: managed authe
 
 ## Known limitations
 
-- Amounts are stored as floating-point values rounded to cents at the API boundary. Integer cents (or `Numeric(12,2)`) would remove rounding drift on very large histories; it needs a data migration and is not done yet.
+- Money is stored as `NUMERIC(12,2)` and computed in `Decimal`; the JSON API still uses plain numbers rounded half-up to cents. On startup `ensure_money_schema()` converts legacy PostgreSQL `double precision` columns in place (`USING round(col::numeric, 2)`); SQLite needs no change. Rollback, per column (`financial_account.opening_balance`, `transaction.amount`, `budget."limit"`, `goal.target`, `goal.saved`): `ALTER TABLE <t> ALTER COLUMN <c> TYPE double precision;` and deploy the previous release (otherwise the next startup converts it again).
 - `/dashboard`, `/transactions` and `/export` return every row for the user. Fine for personal-scale data; server-side paging is the next step for heavy importers.
 - There is no frontend test suite; the client is covered by type checking, the production build and manual checks. Server behaviour is covered by pytest.
 - The client `package.json` pins `@grpc/grpc-js` through `overrides`: Firebase's Firestore package still declares `~1.9.0`, which has published advisories. grpc-js is only used by Firestore's Node build, never by the browser bundle.
